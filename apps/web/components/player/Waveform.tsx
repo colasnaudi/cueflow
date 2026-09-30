@@ -13,13 +13,15 @@ interface WaveformProps {
   track: Track;
   height?: number;
   className?: string;
+  /** Drawn over the waveform, in a box whose width spans the whole track (`duration` seconds). */
+  overlay?: (duration: number) => React.ReactNode;
 }
 
 /**
  * Server-computed peaks rendered by WaveSurfer. When `track` is the one loaded in the player, the waveform
  * drives the shared <audio> element; otherwise clicking it starts playback at that position.
  */
-export function Waveform({ track, height = 96, className }: WaveformProps) {
+export function Waveform({ track, height = 96, className, overlay }: WaveformProps) {
   const container = useRef<HTMLDivElement>(null);
   const isCurrent = usePlayer((s) => s.track?.id === track.id);
   const { data, isError } = useQuery({
@@ -62,6 +64,7 @@ export function Waveform({ track, height = 96, className }: WaveformProps) {
         </div>
       )}
       <div ref={container} className="h-full w-full cursor-pointer" />
+      {data && overlay && <div className="pointer-events-none absolute inset-0 overflow-hidden">{overlay(data.duration)}</div>}
     </div>
   );
 }

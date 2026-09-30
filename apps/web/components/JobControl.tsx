@@ -1,40 +1,55 @@
 "use client";
 
+import type { AnalysisStatus } from "@cueflow/types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AudioWaveform, Square } from "lucide-react";
+import { Square } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
-export function AnalysisControl() {
+interface JobControlProps {
+  id: string;
+  status: () => Promise<AnalysisStatus>;
+  start: () => Promise<unknown>;
+  stop: () => Promise<unknown>;
+  /** Queries refreshed every 10 processed items and when the job ends. */
+  invalidate: string[][];
+  label: string;
+  icon: React.ReactNode;
+  hint?: string;
+  compact?: boolean;
+}
+
+/** Start / stop / progress of a background job. */
+export function JobControl({ id, status: fetchStatus, start, stop, invalidate, label, icon, hint, compact }: JobControlProps) {
   const client = useQueryClient();
   const { data: status, refetch } = useQuery({
-    queryKey: ["analysis"],
-    queryFn: api.analysisStatus,
+    queryKey: ["job", id],
+    queryFn: fetchStatus,
     refetchInterval: (query) => (query.state.data?.running ? 2000 : false),
   });
   const lastProcessed = useRef(0);
 
-  // New suggestions land while the job runs: refresh the queue every 10 analysed tracks, and at the end.
   useEffect(() => {
     if (!status) return;
     const done = !status.running && lastProcessed.current > 0;
     if (status.processed - lastProcessed.current >= 10 || done) {
-      void client.invalidateQueries({ queryKey: ["reviews"] });
+      for (const key of invalidate) void client.invalidateQueries({ queryKey: key });
+      lastProcessed.current = status.processed;
     }
-    lastProcessed.current = status.running ? status.processed : 0;
-  }, [status, client]);
+    if (!status.running) lastProcessed.current = 0;
+  }, [status, client, invalidate]);
 
   const running = !!status?.running;
   const progress = status?.total ? Math.round((status.processed / status.total) * 100) : 0;
 
   return (
-    <div className="flex items-center gap-3">
+    <div className={cn("flex gap-3", compact ? "flex-col gap-1.5" : "items-center")}>
       {running && (
-        <div className="flex w-72 flex-col gap-1">
+        <div className={cn("flex flex-col gap-1", !compact && "w-72")}>
           <div className="flex justify-between font-mono text-[11px] text-muted-foreground tabular-nums">
-            <span>{status?.phase === "folders" ? "Reading folders…" : `Analysing ${status?.processed}/${status?.total}`}</span>
+            <span>{status?.phase === "folders" ? "Reading folders…" : `${status?.processed}/${status?.total}`}</span>
             <span>{progress}%</span>
           </div>
           <div className="h-1 overflow-hidden rounded bg-muted">
@@ -44,23 +59,23 @@ export function AnalysisControl() {
         </div>
       )}
       {!running && status?.state === "failed" && (
-        <span className="max-w-72 truncate text-[11px] text-destructive" title={status.error ?? undefined}>
-          Analysis failed: {status.error}
+        <span className="truncate text-[11px] text-destructive" title={status.error ?? undefined}>
+          Failed: {status.error}
         </span>
       )}
       {!running && (status?.state === "completed" || status?.state === "stopped") && (
         <span className="text-[11px] text-muted-foreground">
-          {status.state === "stopped" ? "Stopped" : "Last run"}: {status.analyzed} analysed
+          {status.state === "stopped" ? "Stopped" : "Done"}: {status.analyzed} analysed
           {status.error_count > 0 && ` · ${status.error_count} errors`}
         </span>
       )}
       {running ? (
-        <Button variant="outline" size="sm" onClick={() => api.stopAnalysis().then(() => refetch())}>
+        <Button variant="outline" size="sm" onClick={() => stop().then(() => refetch())}>
           <Square /> Stop
         </Button>
       ) : (
-        <Button size="sm" onClick={() => api.startAnalysis().catch(() => undefined).finally(() => refetch())} title="Suggest genres from your folders, then from the audio (≈1.5 s per track)">
-          <AudioWaveform /> Analyse library
+        <Button size="sm" variant={compact ? "outline" : "default"} onClick={() => start().catch(() => undefined).finally(() => refetch())} title={hint}>
+          {icon} {label}
         </Button>
       )}
     </div>

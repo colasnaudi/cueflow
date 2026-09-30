@@ -2,9 +2,10 @@
 
 import type { ReviewStatus } from "@cueflow/types";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AudioWaveform } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { AnalysisControl } from "@/components/review/AnalysisControl";
+import { JobControl } from "@/components/JobControl";
 import { ReviewRow } from "@/components/review/ReviewRow";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
@@ -15,6 +16,7 @@ import { usePlayer } from "@/lib/player";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 50;
+const GENRE_JOB_REFRESH = [["reviews"]];
 const TABS: { status: ReviewStatus; label: string }[] = [
   { status: "PENDING", label: "To review" },
   { status: "APPROVED", label: "Approved" },
@@ -126,7 +128,16 @@ export default function ReviewPage() {
           ))}
         </div>
         <div className="ml-auto">
-          <AnalysisControl />
+          <JobControl
+            id="genres"
+            status={api.analysisStatus}
+            start={api.startAnalysis}
+            stop={api.stopAnalysis}
+            invalidate={GENRE_JOB_REFRESH}
+            label="Analyse library"
+            icon={<AudioWaveform />}
+            hint="Suggest genres from your folders, then from the audio (≈1.5 s per track)"
+          />
         </div>
       </header>
 

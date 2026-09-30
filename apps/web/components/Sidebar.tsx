@@ -1,15 +1,18 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clock, FolderSync, Library, ListMusic, Sparkles, Star, Trash2 } from "lucide-react";
+import { AudioLines, Clock, FolderSync, Library, ListMusic, Sparkles, Star, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef } from "react";
 
+import { JobControl } from "@/components/JobControl";
 import { FolderTree } from "@/components/library/FolderTree";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+const AUDIO_JOB_REFRESH = [["tracks"], ["track"], ["analysis"], ["facets"]];
 
 const VIEWS = [
   {
@@ -159,7 +162,18 @@ export function Sidebar() {
         </p>
       </section>
 
-      <div>
+      <div className="flex flex-col gap-2">
+        <JobControl
+          id="audio"
+          compact
+          status={api.audioStatus}
+          start={api.startAudio}
+          stop={api.stopAudio}
+          invalidate={AUDIO_JOB_REFRESH}
+          label="Analyse audio"
+          icon={<AudioLines />}
+          hint="BPM, beatgrid, bar 1, key and energy for every track (≈5 s per track, 3 in parallel)"
+        />
         <ScanButton />
       </div>
     </aside>

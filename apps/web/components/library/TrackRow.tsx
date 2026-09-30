@@ -55,8 +55,11 @@ export const TrackRow = memo(function TrackRow({ track, index, onPlay }: TrackRo
       </div>
 
       <div className="truncate text-xs text-muted-foreground">{track.genre ?? ""}</div>
-      <div className="text-right font-mono text-xs tabular-nums">{formatBpm(track.bpm)}</div>
-      <div>
+      <div className="text-right font-mono text-xs tabular-nums" title={track.bpm_source === "ANALYSIS" ? "Detected from the audio" : undefined}>
+        {formatBpm(track.bpm)}
+        {track.bpm_source === "ANALYSIS" && <sup className="text-primary">•</sup>}
+      </div>
+      <div title={track.key_source === "ANALYSIS" ? "Detected from the audio" : undefined}>
         <KeyBadge camelot={track.camelot_key} />
       </div>
       <div className="text-right font-mono text-xs tabular-nums text-muted-foreground">{formatDuration(track.duration_ms)}</div>

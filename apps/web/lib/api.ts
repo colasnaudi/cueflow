@@ -13,6 +13,7 @@ import type {
   ScanStatus,
   TagCount,
   Track,
+  TrackAnalysis,
   TrackPage,
   TrackQuery,
   TrackUpdate,
@@ -69,6 +70,17 @@ export const api = {
   analysisStatus: () => request<AnalysisStatus>("/analysis/genres"),
   startAnalysis: () => request<{ started: boolean }>("/analysis/genres", { method: "POST" }),
   stopAnalysis: () => request<AnalysisStatus>("/analysis/genres/stop", { method: "POST" }),
+
+  trackAnalysis: (id: string) => request<TrackAnalysis>(`/tracks/${id}/analysis`),
+  analyseTrack: (id: string, resetGrid = false) =>
+    request<TrackAnalysis>(`/tracks/${id}/analysis?reset_grid=${resetGrid}`, { method: "POST" }),
+  applyAnalysis: (id: string, fields: ("bpm" | "key")[]) =>
+    request<Track>(`/tracks/${id}/analysis/apply`, { method: "POST", body: JSON.stringify({ fields }) }),
+  shiftDownbeat: (id: string, beats: number) =>
+    request<TrackAnalysis>(`/tracks/${id}/beatgrid/shift`, { method: "POST", body: JSON.stringify({ beats }) }),
+  audioStatus: () => request<AnalysisStatus>("/analysis/audio"),
+  startAudio: () => request<{ started: boolean }>("/analysis/audio", { method: "POST" }),
+  stopAudio: () => request<AnalysisStatus>("/analysis/audio/stop", { method: "POST" }),
 
   duplicates: (kind: DuplicateKind, offset = 0, limit = 50) =>
     request<DuplicatePage>(`/cleanup/duplicates?${toSearchParams({ kind, offset, limit })}`),

@@ -8,6 +8,8 @@ export type TrackStatus =
   | "USER_REVIEWED"
   | "EXPORTED";
 
+export type ValueSource = "TAG" | "ANALYSIS" | "USER";
+
 export interface Tag {
   id: string;
   name: string;
@@ -34,8 +36,11 @@ export interface Track {
   year: number | null;
   duration_ms: number | null;
   bpm: number | null;
+  /** TAG (file), ANALYSIS (detected from the audio) or USER (typed in Cueflow). */
+  bpm_source: ValueSource | null;
   musical_key: string | null;
   camelot_key: string | null;
+  key_source: ValueSource | null;
   bitrate: number | null;
   sample_rate: number | null;
   rating: number;
@@ -148,6 +153,7 @@ export interface ReviewPage {
   counts: Record<ReviewStatus, number>;
 }
 
+/** Progress of a background job (genre analysis, audio analysis). */
 export interface AnalysisStatus {
   state: "idle" | "running" | "completed" | "stopped" | "failed";
   running: boolean;
@@ -195,4 +201,26 @@ export interface TrashResult {
   removed: number;
   freed_bytes: number;
   errors: string[];
+}
+
+export interface Beatgrid {
+  bpm: number;
+  /** Seconds; beat k is at first_beat + k * 60 / bpm. */
+  first_beat: number;
+  /** Index (0-3) of the first beat that starts a bar. */
+  downbeat_offset: number;
+  beats_per_bar: number;
+  grid_confidence: number | null;
+  downbeat_confidence: number | null;
+  source: "ANALYSIS" | "USER";
+}
+
+export interface TrackAnalysis {
+  beatgrid: Beatgrid | null;
+  musical_key: string | null;
+  camelot_key: string | null;
+  key_strength: number | null;
+  /** One 0-1 value per bar. */
+  energy_curve: number[];
+  analyzed_at: string | null;
 }
