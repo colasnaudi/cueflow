@@ -1,0 +1,198 @@
+// Mirrors apps/api/app/schemas.py — keep both in sync.
+
+export type TrackStatus =
+  | "NOT_ANALYZED"
+  | "ANALYZING"
+  | "ANALYZED"
+  | "AI_REVIEW"
+  | "USER_REVIEWED"
+  | "EXPORTED";
+
+export interface Tag {
+  id: string;
+  name: string;
+  category: string | null;
+  source: string | null;
+}
+
+export interface TagCount {
+  id: string;
+  name: string;
+  category: string | null;
+  count: number;
+}
+
+export interface Track {
+  id: string;
+  path: string;
+  filename: string;
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  label: string | null;
+  genre: string | null;
+  year: number | null;
+  duration_ms: number | null;
+  bpm: number | null;
+  musical_key: string | null;
+  camelot_key: string | null;
+  bitrate: number | null;
+  sample_rate: number | null;
+  rating: number;
+  status: TrackStatus;
+  file_size: number;
+  tags: Tag[];
+  created_at: string;
+}
+
+export interface TrackPage {
+  items: Track[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface TrackUpdate {
+  rating?: number;
+  genre?: string | null;
+  bpm?: number | null;
+  musical_key?: string | null;
+}
+
+export type SortField = "artist" | "title" | "bpm" | "key" | "genre" | "rating" | "duration" | "added";
+
+export interface TrackQuery {
+  q?: string;
+  genre?: string[];
+  key?: string[];
+  tag?: string[];
+  bpm_min?: number;
+  bpm_max?: number;
+  rating_min?: number;
+  min_duration_ms?: number;
+  dedupe?: boolean;
+  folder?: string;
+  sort?: SortField;
+  order?: "asc" | "desc";
+}
+
+export interface Facet {
+  value: string;
+  count: number;
+}
+
+export interface Facets {
+  genres: Facet[];
+  keys: Facet[];
+  bpm_min: number | null;
+  bpm_max: number | null;
+  total: number;
+}
+
+export interface Peaks {
+  duration: number;
+  peaks: number[];
+}
+
+export interface ScanStatus {
+  state: "idle" | "running" | "completed" | "failed";
+  running: boolean;
+  error: string | null;
+  root: string | null;
+  total: number;
+  processed: number;
+  added: number;
+  updated: number;
+  moved: number;
+  unchanged: number;
+  missing: number;
+  excluded: number;
+  errors: string[];
+  error_count: number;
+  started_at: number | null;
+  finished_at: number | null;
+}
+
+export interface FolderNode {
+  name: string;
+  path: string;
+  count: number;
+  children: FolderNode[];
+}
+
+export type ReviewStatus = "PENDING" | "APPROVED" | "REJECTED";
+export type SuggestionSource = "FOLDER" | "AUDIO" | "FOLDER+AUDIO";
+
+export interface GenreSuggestion {
+  genre: string;
+  confidence: number | null;
+  source: SuggestionSource;
+  rank: number;
+}
+
+export interface ReviewItem {
+  track: Track;
+  folder: string;
+  suggestions: GenreSuggestion[];
+  review: {
+    status: ReviewStatus;
+    chosen_genre: string | null;
+    previous_genre: string | null;
+    reviewed_at: string | null;
+  };
+}
+
+export interface ReviewPage {
+  items: ReviewItem[];
+  total: number;
+  counts: Record<ReviewStatus, number>;
+}
+
+export interface AnalysisStatus {
+  state: "idle" | "running" | "completed" | "stopped" | "failed";
+  running: boolean;
+  error: string | null;
+  phase: "folders" | "audio" | null;
+  total: number;
+  processed: number;
+  analyzed: number;
+  current: string | null;
+  errors: string[];
+  error_count: number;
+  started_at: number | null;
+  finished_at: number | null;
+}
+
+export type DuplicateKind = "exact" | "probable";
+
+export interface DuplicateGroup {
+  /** Copies kept by default: every copy in numbered folders, Apple Music files, else the best copy. */
+  keep_ids: string[];
+  copies: { track: Track; folder: string; protected: boolean }[];
+}
+
+export interface DuplicatePage {
+  groups: DuplicateGroup[];
+  total_groups: number;
+  removable_files: number;
+  removable_bytes: number;
+}
+
+export interface ShortFolder {
+  folder: string;
+  count: number;
+  bytes: number;
+  sample_folder: boolean;
+}
+
+export interface ShortTracks {
+  folders: ShortFolder[];
+  total: number;
+  max_ms: number;
+}
+
+export interface TrashResult {
+  removed: number;
+  freed_bytes: number;
+  errors: string[];
+}
