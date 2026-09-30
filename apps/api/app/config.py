@@ -1,0 +1,31 @@
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=REPO_ROOT / ".env", extra="ignore")
+
+    database_url: str = "postgresql+psycopg://cueflow:cueflow@localhost:5433/cueflow"
+    music_root: str = str(Path.home() / "Music")
+    data_dir: Path = REPO_ROOT / "data"
+    cors_origins: list[str] = ["http://localhost:3000"]
+    # Application data living in the music folder (sampler packs, DAW libraries): never indexed.
+    scan_exclude_dirs: list[str] = ["rekordbox", "Ableton", "_Serato_", "Native Instruments", "Logic"]
+
+    ollama_url: str = "http://localhost:11434"
+    ollama_llm_model: str = "gemma4:12b-it-qat"
+    ollama_embed_model: str = "embeddinggemma"
+    embedding_dim: int = 768
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+def music_root() -> Path:
+    return Path(get_settings().music_root).expanduser().resolve()

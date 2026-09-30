@@ -1,0 +1,41 @@
+[project]
+name = "cueflow-api"
+version = "0.1.0"
+description = "Cueflow API: DJ library scanner, analysis and Rekordbox bridge"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.20.0",
+    "certifi>=2026.7.22",
+    "essentia-tensorflow==2.1b6.dev1389",
+    "fastapi>=0.142.2",
+    "mutagen>=1.48.1",
+    "numpy>=2.5.3",
+    "psycopg[binary]>=3.3.6",
+    "pydantic-settings>=2.15.0",
+    "send2trash>=2.1.0",
+    "sqlalchemy>=2",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.13.1",
+    "pytest>=9.1.1",
+    "ruff>=0.16.9",
+]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
