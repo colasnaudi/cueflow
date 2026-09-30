@@ -48,6 +48,12 @@ The current runtime implements the library-management MVP plus genre review and 
 * Genre suggestions
 * Genre review queue
 * Essentia Discogs-EffNet genre analysis
+* BPM analysis from raw audio (constant beatgrid fit, integer-tempo snapping)
+* Beatgrid generation and phase refinement
+* Downbeat detection (beat_this model, user-correctable "bar 1")
+* Musical key detection (Essentia `bgate` profile)
+* Per-bar energy curve
+* Tag vs analysis comparison with explicit "use analysed value"
 * Duplicate detection
 * Probable duplicate detection
 * Short-track cleanup
@@ -57,10 +63,6 @@ The current runtime implements the library-management MVP plus genre review and 
 
 These are roadmap items, not current runtime capabilities:
 
-* BPM analysis from raw audio
-* Beat detection
-* Beatgrid generation
-* Downbeat detection
 * Musical structure analysis
 * Hot Cues
 * Memory Cues
@@ -422,13 +424,13 @@ GET    /tracks/{id}/audio
 GET    /tracks/{id}/peaks
 
 POST   /tracks/{id}/tags
-DELETE /tracks/{id}/tags
+DELETE /tracks/{id}/tags/{tag_id}
 
 POST   /library/scan
 GET    /library/scan
 
 GET    /library/folders
-GET    /facets
+GET    /library/facets
 
 GET    /review/genres
 POST   /review/genres/{id}
@@ -445,6 +447,15 @@ GET    /cleanup/short
 POST   /cleanup/short/delete
 
 POST   /cleanup/delete
+
+GET    /tracks/{id}/analysis
+POST   /tracks/{id}/analysis
+POST   /tracks/{id}/analysis/apply
+POST   /tracks/{id}/beatgrid/shift
+
+GET    /analysis/audio
+POST   /analysis/audio
+POST   /analysis/audio/stop
 ```
 
 When adding an endpoint:
