@@ -2,7 +2,17 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, Text, UniqueConstraint, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,6 +37,10 @@ class AudioAnalysis(Base):
     intro_seconds: Mapped[Decimal | None] = mapped_column(Numeric(10, 3))
     outro_seconds: Mapped[Decimal | None] = mapped_column(Numeric(10, 3))
     styles: Mapped[list[dict] | None] = mapped_column(JSONB)
+    musical_key: Mapped[str | None] = mapped_column(Text)
+    camelot_key: Mapped[str | None] = mapped_column(Text)
+    key_strength: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
+    energy_curve: Mapped[list[float] | None] = mapped_column(JSONB)
     analyzed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     analyzer_version: Mapped[str] = mapped_column(Text)
 
@@ -58,3 +72,21 @@ class GenreReview(Base):
     chosen_genre: Mapped[str | None] = mapped_column(Text)
     previous_genre: Mapped[str | None] = mapped_column(Text)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class Beatgrid(Base):
+    __tablename__ = "beatgrids"
+    __table_args__ = (
+        CheckConstraint("downbeat_offset BETWEEN 0 AND beats_per_bar - 1", name="beatgrids_check"),
+    )
+
+    track_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"), primary_key=True)
+    bpm: Mapped[Decimal] = mapped_column(Numeric(7, 3))
+    first_beat: Mapped[Decimal] = mapped_column(Numeric(10, 4))
+    downbeat_offset: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    beats_per_bar: Mapped[int] = mapped_column(Integer, default=4, server_default="4")
+    grid_confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
+    downbeat_confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
+    source: Mapped[str] = mapped_column(Text, default="ANALYSIS", server_default="ANALYSIS")
+    analyzer_version: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

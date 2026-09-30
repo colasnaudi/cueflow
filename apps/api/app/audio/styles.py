@@ -24,24 +24,26 @@ def models_dir() -> Path:
     return get_settings().data_dir / "models"
 
 
-def ensure_models() -> None:
-    """Download the model files on first use (~20 MB)."""
+def download(url: str, target: Path) -> None:
+    """Fetch a model file atomically (python.org builds ship without root certificates: use certifi)."""
     import ssl
     import urllib.request
 
     import certifi
 
-    # python.org builds ship without root certificates: use certifi's bundle.
     context = ssl.create_default_context(cafile=certifi.where())
-    target = models_dir()
-    target.mkdir(parents=True, exist_ok=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(f"{target.name}.part")
+    with urllib.request.urlopen(url, context=context, timeout=300) as response:
+        tmp.write_bytes(response.read())
+    tmp.rename(target)
+
+
+def ensure_models() -> None:
+    """Download the model files on first use (~20 MB)."""
     for name, remote in MODEL_FILES.items():
-        if not (target / name).exists():
-            tmp = target / f"{name}.part"
-            url = f"{MODEL_BASE_URL}/{remote}"
-            with urllib.request.urlopen(url, context=context, timeout=120) as response:
-                tmp.write_bytes(response.read())
-            tmp.rename(target / name)
+        if not (models_dir() / name).exists():
+            download(f"{MODEL_BASE_URL}/{remote}", models_dir() / name)
 
 
 def style_name(label: str) -> str:

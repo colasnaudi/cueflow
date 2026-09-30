@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     # Application data living in the music folder (sampler packs, DAW libraries): never indexed.
     scan_exclude_dirs: list[str] = ["rekordbox", "Ableton", "_Serato_", "Native Instruments", "Logic"]
 
+    # Parallel processes for library-wide audio analysis (each holds Essentia + a beat model, ~0.5 GB).
+    analysis_workers: int = 3
+
     ollama_url: str = "http://localhost:11434"
     ollama_llm_model: str = "gemma4:12b-it-qat"
     ollama_embed_model: str = "embeddinggemma"

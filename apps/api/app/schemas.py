@@ -26,8 +26,10 @@ class TrackOut(BaseModel):
     year: int | None
     duration_ms: int | None
     bpm: float | None
+    bpm_source: str | None
     musical_key: str | None
     camelot_key: str | None
+    key_source: str | None
     bitrate: int | None
     sample_rate: int | None
     rating: int
@@ -188,3 +190,32 @@ class TrashResult(BaseModel):
     removed: int
     freed_bytes: int
     errors: list[str]
+
+
+class BeatgridOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    bpm: float
+    first_beat: float
+    downbeat_offset: int
+    beats_per_bar: int
+    grid_confidence: float | None
+    downbeat_confidence: float | None
+    source: str
+
+
+class TrackAnalysis(BaseModel):
+    beatgrid: BeatgridOut | None
+    musical_key: str | None
+    camelot_key: str | None
+    key_strength: float | None
+    energy_curve: list[float]
+    analyzed_at: datetime | None
+
+
+class ApplyAnalysis(BaseModel):
+    fields: list[Literal["bpm", "key"]] = Field(min_length=1)
+
+
+class ShiftDownbeat(BaseModel):
+    beats: int = Field(ge=-3, le=3)

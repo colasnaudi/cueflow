@@ -3,7 +3,6 @@
 import logging
 import threading
 import time
-from dataclasses import asdict, dataclass, field
 
 from sqlalchemy import delete, or_, select
 from sqlalchemy.dialects.postgresql import insert
@@ -14,6 +13,7 @@ from app.config import music_root
 from app.db import SessionLocal
 from app.models import AudioAnalysis, GenreReview, GenreSuggestion, Track
 from app.services.folders import folder_genre, is_sample_folder
+from app.services.jobs import JobStatus
 
 log = logging.getLogger(__name__)
 
@@ -66,28 +66,6 @@ def save_suggestions(session: Session, track: Track, suggestions: list[dict]) ->
     if suggestions:
         # Reviewed tracks keep their decision; only new tracks enter the queue.
         session.execute(insert(GenreReview).values(track_id=track.id).on_conflict_do_nothing())
-
-
-@dataclass
-class JobStatus:
-    state: str = "idle"  # idle | running | completed | stopped | failed
-    running: bool = False
-    error: str | None = None
-    phase: str | None = None
-    total: int = 0
-    processed: int = 0
-    analyzed: int = 0
-    reused: int = 0
-    current: str | None = None
-    errors: list[str] = field(default_factory=list)
-    started_at: float | None = None
-    finished_at: float | None = None
-    stop_requested: bool = False
-
-    def as_dict(self) -> dict:
-        data = asdict(self) | {"error_count": len(self.errors), "errors": self.errors[-20:]}
-        data.pop("stop_requested")
-        return data
 
 
 status = JobStatus()

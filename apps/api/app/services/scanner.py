@@ -113,11 +113,27 @@ def _apply(session: Session, data: dict, by_path: dict[str, Track], by_hash: dic
     # Never overwrite a user-set rating with the file's POPM value.
     if outcome != "added" and track.rating:
         data = {k: v for k, v in data.items() if k != "rating"}
+    data = _keep_curated_values(track, data)
     for key, value in data.items():
         setattr(track, key, value)
     by_path[track.path] = track
     by_hash.setdefault(track.file_hash, []).append(track)
     return outcome
+
+
+def _keep_curated_values(track: Track, data: dict) -> dict:
+    """File tags fill BPM/key (source TAG) but never replace a value typed by the user, and an analysed value
+    is only replaced when the file now carries a tag."""
+    data = dict(data)
+    for value_keys, source_key in ((("bpm",), "bpm_source"), (("musical_key", "camelot_key"), "key_source")):
+        current = getattr(track, source_key, None)
+        tagged = data.get(value_keys[-1]) is not None
+        if current == "USER" or (current == "ANALYSIS" and not tagged):
+            for key in value_keys:
+                data.pop(key, None)
+        else:
+            data[source_key] = "TAG" if tagged else None
+    return data
 
 
 def scan(root: str | Path, workers: int = 8) -> ScanStatus:

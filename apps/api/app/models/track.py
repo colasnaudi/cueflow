@@ -33,6 +33,10 @@ class Track(Base):
     bpm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
     musical_key: Mapped[str | None] = mapped_column(Text)
     camelot_key: Mapped[str | None] = mapped_column(Text, index=True)
+    # Where bpm / musical_key come from: TAG (file), ANALYSIS (DSP, only when the tag was empty or the user
+    # accepted it) or USER (typed in Cueflow).
+    bpm_source: Mapped[str | None] = mapped_column(Text)
+    key_source: Mapped[str | None] = mapped_column(Text)
 
     bitrate: Mapped[int | None] = mapped_column(Integer)
     sample_rate: Mapped[int | None] = mapped_column(Integer)
