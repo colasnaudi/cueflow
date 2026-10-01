@@ -6,11 +6,11 @@ In Rekordbox: rekordbox xml tree -> select the tracks themselves -> right click 
 (importing only the playlist does not update tracks already in the collection).
 """
 
+import unicodedata
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote
 
 import numpy as np
 
@@ -53,9 +53,21 @@ def snap(time: float, inizio: float, period: float) -> float:
     return inizio + np.floor((time - inizio) / period + 0.55) * period
 
 
+# Rekordbox matches the tracks of an imported XML to its collection by the exact Location string, so it must
+# be encoded the way Rekordbox writes it (measured on a 6,079-track export): NFC, these ASCII characters left
+# as they are, everything else (space ' & [ ] % and non-ASCII bytes) as lowercase %xx.
+REKORDBOX_LITERAL = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/_.-:()!,*@+$=#;?~"
+)
+
+
 def location(path: str) -> str:
-    """file://localhost URI, percent-encoded like Rekordbox writes it."""
-    return "file://localhost" + quote(path, safe="/")
+    """file://localhost URI, encoded exactly like Rekordbox writes it."""
+    encoded = "".join(
+        char if char in REKORDBOX_LITERAL else "".join(f"%{byte:02x}" for byte in char.encode("utf-8"))
+        for char in unicodedata.normalize("NFC", path)
+    )
+    return "file://localhost" + encoded
 
 
 def cue_time(grid: Beatgrid, bar: int, beat: int) -> float:

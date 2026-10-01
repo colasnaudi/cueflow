@@ -101,7 +101,8 @@ def test_rekordbox_xml():
 
     assert root.tag == "DJ_PLAYLISTS" and root.find("COLLECTION").get("Entries") == "2"
     mp3, wav = root.findall("COLLECTION/TRACK")
-    assert mp3.get("Location") == "file://localhost/Music/02_GENRES/%C3%89t%C3%A9%2C%20Mix%20%26%20Co%27s.mp3"
+    # Encoded exactly like Rekordbox (it matches tracks on the raw string): lowercase hex, "," and "(" kept.
+    assert mp3.get("Location") == "file://localhost/Music/02_GENRES/%c3%89t%c3%a9,%20Mix%20%26%20Co%27s.mp3"
     assert (mp3.get("Name"), mp3.get("Kind"), mp3.get("Rating"), mp3.get("AverageBpm")) == (
         "Été, l'été",
         "MP3 File",
