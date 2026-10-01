@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AudioLines, Clock, FolderSync, Library, ListMusic, Sparkles, Star, Trash2 } from "lucide-react";
+import { AudioLines, Clock, Disc3, FolderSync, Library, ListMusic, Sparkles, Star, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef } from "react";
@@ -56,6 +56,7 @@ function Tools() {
   const tools = [
     { label: "Genre Review", href: "/review", icon: Sparkles, badge: pending || undefined },
     { label: "Cleanup", href: "/cleanup", icon: Trash2 },
+    { label: "Rekordbox export", href: "/export", icon: Disc3 },
   ];
   return (
     <nav className="flex flex-col gap-0.5">

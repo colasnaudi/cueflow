@@ -1,11 +1,11 @@
-import type { TrackAnalysis } from "@cueflow/types";
+import type { Cue, TrackAnalysis } from "@cueflow/types";
 
 import { SECTION_STYLE, barStarts, barTime, positionLabel, positionTime } from "@/lib/beatgrid";
 
 const PHRASE_BARS = 8;
 
 /** Sections, bar lines (phrase every 8 bars, numbered), vocal and energy strips, aligned on the waveform. */
-export function BeatgridOverlay({ analysis, duration }: { analysis: TrackAnalysis; duration: number }) {
+export function BeatgridOverlay({ analysis, cues = [], duration }: { analysis: TrackAnalysis; cues?: Cue[]; duration: number }) {
   if (!analysis.beatgrid || duration <= 0) return null;
   const starts = barStarts(analysis.beatgrid, duration);
   const pct = (t: number) => `${(t / duration) * 100}%`;
@@ -53,6 +53,20 @@ export function BeatgridOverlay({ analysis, duration }: { analysis: TrackAnalysi
           </div>
         );
       })}
+      {cues
+        .filter((cue) => cue.type === "HOT")
+        .map((cue) => (
+          <div
+            key={cue.id}
+            className="absolute top-4 bottom-3 w-px"
+            style={{ left: pct(positionTime(analysis.beatgrid!, starts, cue.bar, cue.beat, duration)), backgroundColor: cue.color ?? "#888" }}
+            title={`${cue.slot} · ${cue.label}`}
+          >
+            <span className="absolute bottom-0 left-0 rounded-r px-1 font-mono text-[9px] leading-3 font-bold text-black" style={{ backgroundColor: cue.color ?? "#888" }}>
+              {cue.slot}
+            </span>
+          </div>
+        ))}
       {strip(analysis.vocal_curve, "bottom-1.5", "bg-cyan-400", "voice")}
       {strip(analysis.energy_curve, "bottom-0", "bg-primary", "energy")}
     </>

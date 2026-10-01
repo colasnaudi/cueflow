@@ -8,6 +8,7 @@ import { use } from "react";
 
 import { AnalysisPanel } from "@/components/analysis/AnalysisPanel";
 import { BeatgridOverlay } from "@/components/analysis/BeatgridOverlay";
+import { CuesPanel } from "@/components/analysis/CuesPanel";
 import { KeyBadge } from "@/components/library/KeyBadge";
 import { Rating } from "@/components/library/Rating";
 import { TagEditor } from "@/components/library/TagEditor";
@@ -34,6 +35,7 @@ export default function TrackPage({ params }: PageProps<"/tracks/[id]">) {
   const { data: track, isError, error } = useQuery({ queryKey: ["track", id], queryFn: () => api.track(id) });
   const tags = useQuery({ queryKey: ["tags"], queryFn: api.tags });
   const analysis = useQuery({ queryKey: ["analysis", id], queryFn: () => api.trackAnalysis(id) });
+  const cues = useQuery({ queryKey: ["cues", id], queryFn: () => api.cues(id) });
   const { update, addTag, removeTag } = useTrackMutations(id);
   const isCurrent = usePlayer((s) => s.track?.id === id);
   const playing = usePlayer((s) => s.playing && s.track?.id === id);
@@ -84,11 +86,14 @@ export default function TrackPage({ params }: PageProps<"/tracks/[id]">) {
           <Waveform
             track={track}
             height={128}
-            overlay={(duration) => analysis.data && <BeatgridOverlay analysis={analysis.data} duration={duration} />}
+            overlay={(duration) =>
+              analysis.data && <BeatgridOverlay analysis={analysis.data} cues={cues.data ?? []} duration={duration} />
+            }
           />
         </section>
 
         <AnalysisPanel track={track} analysis={analysis.data} />
+        <CuesPanel track={track} analysis={analysis.data} />
 
         <section className="flex flex-col gap-2">
           <h2 className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">Tags</h2>

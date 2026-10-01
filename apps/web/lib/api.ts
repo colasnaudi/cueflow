@@ -1,7 +1,9 @@
 import type {
   AnalysisStatus,
+  Cue,
   DuplicateKind,
   DuplicatePage,
+  ExportPreview,
   Facets,
   FolderNode,
   ReviewItem,
@@ -78,6 +80,30 @@ export const api = {
     request<Track>(`/tracks/${id}/analysis/apply`, { method: "POST", body: JSON.stringify({ fields }) }),
   shiftDownbeat: (id: string, beats: number) =>
     request<TrackAnalysis>(`/tracks/${id}/beatgrid/shift`, { method: "POST", body: JSON.stringify({ beats }) }),
+  cues: (id: string) => request<Cue[]>(`/tracks/${id}/cues`),
+  approveCues: (id: string) => request<Cue[]>(`/tracks/${id}/cues/approve`, { method: "POST" }),
+  regenerateCues: (id: string) => request<Cue[]>(`/tracks/${id}/cues/regenerate`, { method: "POST" }),
+  deleteCue: (id: string, cueId: string) => request<Cue[]>(`/tracks/${id}/cues/${cueId}`, { method: "DELETE" }),
+  exportPreview: (folder: string | undefined, approvedOnly: boolean) =>
+    request<ExportPreview>(`/export/rekordbox/preview?${toSearchParams({ folder, approved_only: approvedOnly })}`),
+  /** Downloads the rekordbox.xml through the browser. */
+  exportRekordbox: async (body: { folder?: string; approved_only: boolean; include_beatgrid: boolean }) => {
+    const response = await fetch(`${API_URL}/export/rekordbox`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const detail = await response.json().catch(() => null);
+      throw new Error(detail?.detail ?? `${response.status} ${response.statusText}`);
+    }
+    const name = response.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "rekordbox.xml";
+    const url = URL.createObjectURL(await response.blob());
+    const link = Object.assign(document.createElement("a"), { href: url, download: name });
+    link.click();
+    URL.revokeObjectURL(url);
+    return name;
+  },
   audioStatus: () => request<AnalysisStatus>("/analysis/audio"),
   startAudio: () => request<{ started: boolean }>("/analysis/audio", { method: "POST" }),
   stopAudio: () => request<AnalysisStatus>("/analysis/audio/stop", { method: "POST" }),

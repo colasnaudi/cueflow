@@ -158,7 +158,7 @@ export interface AnalysisStatus {
   state: "idle" | "running" | "completed" | "stopped" | "failed";
   running: boolean;
   error: string | null;
-  phase: "folders" | "audio" | null;
+  phase: "folders" | "cues" | "audio" | null;
   total: number;
   processed: number;
   analyzed: number;
@@ -242,4 +242,26 @@ export interface TrackAnalysis {
   /** Share of the track with a voice (0-1). */
   vocal_probability: number | null;
   analyzed_at: string | null;
+}
+
+/** A cue as a musical position (bar + beat, resolved with the beatgrid). */
+export interface Cue {
+  id: string;
+  /** A-H for hot cues, M01... for memory cues. */
+  slot: string;
+  type: "HOT" | "MEMORY";
+  label: string | null;
+  bar: number;
+  beat: number;
+  color: string | null;
+  confidence: number | null;
+  source: "ANALYSIS" | "USER";
+  approved: boolean;
+}
+
+export interface ExportPreview {
+  tracks: number;
+  hot_cues: number;
+  memory_cues: number;
+  unapproved_tracks: number;
 }
