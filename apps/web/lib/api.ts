@@ -7,6 +7,9 @@ import type {
   Facets,
   FolderNode,
   LiveXml,
+  RekordboxImportResult,
+  RekordboxImportStatus,
+  RekordboxSnapshot,
   ReviewItem,
   ReviewPage,
   ReviewStatus,
@@ -117,6 +120,11 @@ export const api = {
     }).then(async (response) => {
       if (!response.ok) throw new Error((await response.json().catch(() => null))?.detail ?? response.statusText);
     }),
+  /** Sends the collection XML itself (the API never reads a path given by the browser). */
+  importRekordbox: (file: File) =>
+    request<RekordboxImportResult>("/rekordbox/import", { method: "POST", body: file, headers: { "Content-Type": "application/xml" } }),
+  rekordboxStatus: () => request<RekordboxImportStatus>("/rekordbox/import"),
+  rekordboxSnapshot: (id: string) => request<RekordboxSnapshot | null>(`/rekordbox/tracks/${id}`),
   liveXml: () => request<LiveXml>("/export/rekordbox/live"),
   refreshLiveXml: () => request<LiveXml>("/export/rekordbox/live", { method: "POST" }),
   stopAudio: () => request<AnalysisStatus>("/analysis/audio/stop", { method: "POST" }),

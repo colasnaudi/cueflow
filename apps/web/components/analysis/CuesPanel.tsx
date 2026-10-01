@@ -21,6 +21,7 @@ function formatCueTime(seconds: number) {
 export function CuesPanel({ track, analysis }: { track: Track; analysis: TrackAnalysis | undefined }) {
   const client = useQueryClient();
   const { data: cues } = useQuery({ queryKey: ["cues", track.id], queryFn: () => api.cues(track.id) });
+  const { data: inRekordbox } = useQuery({ queryKey: ["rekordbox", track.id], queryFn: () => api.rekordboxSnapshot(track.id) });
   const setCues = (value: Cue[]) => client.setQueryData(["cues", track.id], value);
   const approve = useMutation({ mutationFn: () => api.approveCues(track.id), onSuccess: setCues });
   const regenerate = useMutation({ mutationFn: () => api.regenerateCues(track.id), onSuccess: setCues });
@@ -68,6 +69,12 @@ export function CuesPanel({ track, analysis }: { track: Track; analysis: TrackAn
         </div>
       </header>
       <ErrorNotice error={approve.error ?? regenerate.error ?? remove.error} action="Cues" className="mt-2 rounded border" />
+      {!!inRekordbox?.hot_cues && (
+        <p className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-200">
+          Rekordbox already has {inRekordbox.hot_cues} hot cue{inRekordbox.hot_cues > 1 ? "s" : ""} on this track (last
+          collection import): importing Cueflow&apos;s XML into the collection replaces them.
+        </p>
+      )}
 
       <ul className="divide-y divide-border/40">
         {hot.map((cue) => {

@@ -277,3 +277,33 @@ export interface LiveXml {
   updated_at: string | null;
   tracks: number | null;
 }
+
+export interface RekordboxImportResult {
+  entries: number;
+  matched: number;
+  unmatched?: number;
+  with_hot_cues?: number;
+  ratings?: number;
+  genres?: number;
+  bpms?: number;
+  keys?: number;
+}
+
+export interface RekordboxImportStatus {
+  imported_at: string | null;
+  entries: number;
+  matched: number;
+  rated: number;
+}
+
+/** What Rekordbox knows about a track (from the last collection import). */
+export interface RekordboxSnapshot {
+  rating: number;
+  bpm: number | null;
+  tonality: string | null;
+  comments: string | null;
+  play_count: number | null;
+  hot_cues: number;
+  memory_cues: number;
+  imported_at: string;
+}

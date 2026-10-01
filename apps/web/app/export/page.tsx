@@ -2,7 +2,7 @@
 
 import type { FolderNode } from "@cueflow/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Download, RefreshCw, TriangleAlert } from "lucide-react";
+import { Copy, Download, RefreshCw, TriangleAlert, Upload } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -26,6 +26,56 @@ function Option({ checked, onChange, title, children }: { checked: boolean; onCh
         <span className="text-xs text-muted-foreground">{children}</span>
       </span>
     </label>
+  );
+}
+
+function ImportCard() {
+  const client = useQueryClient();
+  const status = useQuery({ queryKey: ["rekordbox-import"], queryFn: api.rekordboxStatus });
+  const upload = useMutation({
+    mutationFn: (file: File) => api.importRekordbox(file),
+    onSuccess: (result) => {
+      toast.success(
+        `Rekordbox collection imported: ${result.matched} tracks matched, ${result.ratings ?? 0} ratings, ` +
+          `${result.bpms ?? 0} BPM and ${result.keys ?? 0} keys filled.`,
+      );
+      for (const key of [["rekordbox-import"], ["tracks"], ["track"], ["rekordbox"], ["facets"]]) {
+        void client.invalidateQueries({ queryKey: key });
+      }
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  return (
+    <section className="flex flex-col gap-3 rounded-lg border border-border p-4">
+      <h2 className="text-sm font-semibold">Import your Rekordbox collection</h2>
+      <p className="text-xs text-muted-foreground">
+        Rekordbox → File → Export Collection in xml format, then pick the file here. Cueflow reads your ratings (they win
+        over file tags, never over a rating changed in Cueflow) and fills missing genres, BPM and keys. Read-only: nothing
+        changes in Rekordbox. Re-import whenever your Rekordbox ratings change.
+      </p>
+      <label className="flex w-fit cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted">
+        <Upload className="size-4" />
+        {upload.isPending ? "Importing…" : "Choose the exported XML"}
+        <input
+          type="file"
+          accept=".xml,application/xml,text/xml"
+          className="hidden"
+          disabled={upload.isPending}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) upload.mutate(file);
+            event.target.value = "";
+          }}
+        />
+      </label>
+      {status.data?.imported_at && (
+        <p className="text-[11px] text-muted-foreground">
+          Last import {new Date(status.data.imported_at).toLocaleString()}: {status.data.entries} Rekordbox tracks,{" "}
+          {status.data.matched} matched to your files, {status.data.rated} rated.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -100,13 +150,14 @@ export default function ExportPage() {
     <div className="h-full overflow-auto">
       <div className="mx-auto flex max-w-3xl flex-col gap-6 px-8 py-8">
         <header>
-          <h1 className="text-2xl font-semibold tracking-tight">Rekordbox export</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Rekordbox</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Hot cues, memory cues and beatgrids go to Rekordbox through its XML import: Cueflow never touches the
             Rekordbox database, the last click (“Import To Collection”) stays yours.
           </p>
         </header>
 
+        <ImportCard />
         <LiveXmlCard />
 
         <h2 className="pt-2 text-sm font-semibold">Or download the XML of one folder</h2>

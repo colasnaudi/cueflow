@@ -56,7 +56,7 @@ function Tools() {
   const tools = [
     { label: "Genre Review", href: "/review", icon: Sparkles, badge: pending || undefined },
     { label: "Cleanup", href: "/cleanup", icon: Trash2 },
-    { label: "Rekordbox export", href: "/export", icon: Disc3 },
+    { label: "Rekordbox", href: "/export", icon: Disc3 },
   ];
   return (
     <nav className="flex flex-col gap-0.5">
