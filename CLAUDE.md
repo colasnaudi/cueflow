@@ -14,6 +14,9 @@ Core principles:
 * Never permanently delete user audio files.
 * Cleanup operations move files to the macOS Trash.
 * Genre suggestions must be reviewed before being applied.
+* Exception decided by the user (2026-10-01): generated cue points are approved automatically
+  (`AUTO_APPROVE_CUES=true`) — the DJ edits them in Rekordbox. A re-analysis replaces automatic cues, never
+  cues the DJ locked/validated in Cueflow.
 * AI must never directly modify Rekordbox.
 * Prefer explicit user approval over automatic destructive or irreversible actions.
 * Keep the application useful without cloud AI or external services.
@@ -56,7 +59,7 @@ The current runtime implements the library-management MVP plus genre review and 
 * Musical structure: INTRO / GROOVE / BREAK / BUILD / DROP / OUTRO from a kick-driven rule engine (stored in bars)
 * Vocal activity per bar (Essentia voice/instrumental)
 * Tag vs analysis comparison with explicit "use analysed value"
-* Hot cue / memory cue suggestions from the sections (A START, B GROOVE, C BREAK, D DROP, E VOCAL, F DROP 2, G OUTRO), approved per track
+* Hot cue / memory cue generation from the sections (A START, B GROOVE, C BREAK, D DROP, E VOCAL, F DROP 2, G OUTRO), approved automatically by default
 * Rekordbox XML export (cues, memory cues, beatgrid) — imported by the user with "Import To Collection"
 * Duplicate detection
 * Probable duplicate detection

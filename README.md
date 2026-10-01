@@ -128,8 +128,10 @@ deterministic analysis of the audio; nothing is written to the files:
 
 After analysis each track gets suggested hot cues — A START, B GROOVE, C BREAK,
 D DROP, E VOCAL, F DROP 2, G OUTRO — placed to the beat from its sections, plus
-a memory cue on every section start. On the track page you listen, remove what
-you do not want and approve; re-analysis never touches approved cues.
+a memory cue on every section start. They are approved automatically
+(`AUTO_APPROVE_CUES=true`), so one “Analyse audio” run leaves the whole library
+ready to export; fix them later in Rekordbox. On the track page you can listen,
+remove a cue, or “Lock cues” so that a later re-analysis keeps them as they are.
 
 “Rekordbox export” builds a `rekordbox.xml` (a copy is kept in `data/exports/`)
 for a folder, with approved cues by default and optionally the beatgrid. In
