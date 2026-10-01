@@ -14,7 +14,7 @@ import numpy as np
 from app.audio.structure import detect_sections
 from app.audio.vocals import per_bar, vocal_model
 
-ANALYZER_VERSION = "cueflow-dsp-v2"  # v2: sections and vocal activity
+ANALYZER_VERSION = "cueflow-dsp-v3"  # v3: sustained-drop structure engine
 BEAT_MODEL = "final0"
 SAMPLE_RATE = 44100
 BEATS_PER_BAR = 4
@@ -183,32 +183,38 @@ def bar_energy(audio: np.ndarray, bar_starts: np.ndarray) -> list[float]:
     return np.round(np.clip((db - (db.max() - ENERGY_RANGE_DB)) / ENERGY_RANGE_DB, 0, 1), 3).tolist()
 
 
-def band_levels(audio: np.ndarray, bar_starts: np.ndarray) -> np.ndarray:
-    """Per bar: low (< 150 Hz), mid (150 Hz - 2 kHz) and high (> 2 kHz) power in dB, relative to each band's
-    loudest bar — the input of the structure rule engine."""
+def bar_features(audio: np.ndarray, bar_starts: np.ndarray) -> np.ndarray:
+    """Per bar, in dB: kick (95th percentile of < 120 Hz power: the hits), bass (30th percentile of < 120 Hz:
+    what remains between the hits), mid (150 Hz - 2 kHz) and high (> 4 kHz) — the structure engine's input.
+
+    Short frames (46 ms, 23 ms hop) separate a kick from the gap after it, so a kick alone and kick + bassline
+    look different.
+    """
     import essentia.standard as es
 
-    frame, hop = 4096, 2048
+    frame, hop = 2048, 1024
     window, spectrum = es.Windowing(type="hann"), es.Spectrum()
-    power = (
-        np.array(
-            [
-                spectrum(window(f))
-                for f in es.FrameGenerator(audio, frameSize=frame, hopSize=hop, startFromZero=True)
-            ]
-        )
-        ** 2
-    )
+    frames = es.FrameGenerator(audio, frameSize=frame, hopSize=hop, startFromZero=True)
+    power = np.array([spectrum(window(f)) for f in frames], dtype=np.float64) ** 2
     times = (np.arange(len(power)) * hop + frame / 2) / SAMPLE_RATE
     freqs = np.fft.rfftfreq(frame, 1 / SAMPLE_RATE)
-    bands = [freqs < 150, (freqs >= 150) & (freqs < 2000), freqs >= 2000]
-    levels = []
+    low = power[:, freqs < 120].sum(axis=1)
+    mid = power[:, (freqs >= 150) & (freqs < 2000)].sum(axis=1)
+    high = power[:, freqs >= 4000].sum(axis=1)
+    rows = []
     for start, end in zip(bar_starts[:-1], bar_starts[1:], strict=True):
         inside = (times >= start) & (times < end)
-        rows = power[inside] if inside.any() else power[[min(len(power) - 1, int(start * SAMPLE_RATE / hop))]]
-        levels.append([10 * np.log10(rows[:, band].sum(axis=1).mean() + 1e-12) for band in bands])
-    db = np.asarray(levels, dtype=np.float64)
-    return db - db.max(axis=0) if len(db) else db.reshape(0, 3)
+        if not inside.any():
+            inside = np.zeros(len(times), dtype=bool)
+            inside[min(len(times) - 1, int(start * SAMPLE_RATE / hop))] = True
+        values = (
+            np.percentile(low[inside], 95),
+            np.percentile(low[inside], 30),
+            mid[inside].mean(),
+            high[inside].mean(),
+        )
+        rows.append([10 * np.log10(v + 1e-12) for v in values])
+    return np.asarray(rows, dtype=np.float64).reshape(-1, 4)
 
 
 def detect_key(audio: np.ndarray) -> tuple[str | None, str | None, float]:
@@ -234,7 +240,7 @@ def analyse(path: str) -> RhythmAnalysis:
     phase, downbeat_confidence = downbeat_phase(downbeat_model.downbeats(audio), first_beat, 60 / bpm)
     bar_starts = np.append(beats[phase::BEATS_PER_BAR], duration)
     musical, camelot, strength = detect_key(audio)
-    sections = detect_sections(band_levels(audio, bar_starts))
+    sections = detect_sections(bar_features(audio, bar_starts))
     voice = vocal_model.voice_timeline(path)
 
     return RhythmAnalysis(

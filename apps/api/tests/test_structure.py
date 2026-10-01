@@ -1,537 +1,147 @@
-"""Sections from band profiles measured on real house tracks (4-bar means, dB relative to the loudest bar)."""
+"""Section detection on per-bar features measured on real house tracks (tests/fixtures/structure/*.json).
+
+Each fixture holds, for every bar, the kick / bass / mid / high levels in dB computed by rhythm.bar_features.
+Expected layouts are 1-based bar numbers, as a DJ counts them.
+"""
+
+import json
+from pathlib import Path
 
 import numpy as np
+import pytest
 
 from app.audio.structure import detect_sections
 
-
-def profile(low, mid, high):
-    """Expand 4-bar means to one row per bar."""
-    return np.repeat(np.array([low, mid, high], dtype=float).T, 4, axis=0)
+FIXTURES = Path(__file__).parent / "fixtures" / "structure"
 
 
-def layout(bands):
-    return [(s.type, s.start_bar, s.end_bar) for s in detect_sections(bands)]
+def features(name: str) -> np.ndarray:
+    return np.array(json.loads((FIXTURES / f"{name}.json").read_text())["features"])
 
 
-# Walker & Royce - Jetsetter: kickless 8-bar intro, break at bar 49, drop at 73, short fade.
-JETSETTER = profile(
-    low=[-22, -21, 0, 0, -1, -1, -7, -6, 0, -1, -1, -4, -11, -10, -9, -10, -23, -15, -1, -2, -1, -2, -8],
-    mid=[-3, -4, -3, -3, -2, -2, -1, -1, -2, -2, -2, -1, -4, -3, -2, -2, -5, -6, -2, -2, -2, -1, -15],
-    high=[-1, -1, -4, -3, -4, -3, -3, -3, -4, -3, -3, -2, -4, -3, -3, -2, -6, -14, -3, -3, -4, -3, -59],
-)
-# Long DJ intro with kick, slow break from bar 85 with a rising build, drop at 129, mids fading from bar 181.
-LONG_INTRO = profile(
-    low=[
-        0,
-        -1,
-        -1,
-        -1,
-        -3,
-        -1,
-        0,
-        -1,
-        -1,
-        -1,
-        -1,
-        -4,
-        -4,
-        0,
-        0,
-        0,
-        0,
-        -5,
-        -6,
-        -7,
-        -7,
-        -11,
-        -11,
-        -13,
-        -13,
-        -19,
-        -27,
-        -22,
-        -27,
-        -30,
-        -18,
-        -12,
-        -6,
-        -1,
-        -1,
-        -1,
-        -3,
-        -1,
-        -1,
-        -1,
-        0,
-        -1,
-        0,
-        -1,
-        0,
-        0,
-        0,
-        -23,
+def layout(bands: np.ndarray) -> list[tuple[str, int]]:
+    return [(s.type, s.start_bar + 1) for s in detect_sections(bands)]
+
+
+EXPECTED = {
+    # Bass out from 49, everything cut at 65 then a kick roll on 70-72: the build, not the drop.
+    "jetsetter": [("INTRO", 1), ("GROOVE", 9), ("BREAK", 49), ("BUILD", 65), ("DROP", 73)],
+    # Filter opening: kick and bass climb from 121 and only reach full level at 133.
+    "more_love_rampa_me_remix": [
+        ("INTRO", 1),
+        ("GROOVE", 25),
+        ("BREAK", 69),
+        ("BUILD", 121),
+        ("DROP", 133),
+        ("OUTRO", 181),
     ],
-    mid=[
-        -8,
-        -6,
-        -6,
-        -6,
-        -6,
-        -7,
-        -7,
-        -7,
-        -7,
-        -6,
-        -6,
-        -5,
-        -5,
-        -4,
-        -4,
-        -4,
-        -3,
-        -2,
-        -3,
-        -3,
-        -3,
-        -5,
-        -5,
-        -5,
-        -4,
-        -8,
-        -11,
-        -11,
-        -10,
-        -7,
-        -5,
-        -2,
-        -1,
-        -2,
-        -2,
-        -2,
-        -2,
-        -2,
-        -3,
-        -3,
-        -4,
-        -4,
-        -5,
-        -5,
-        -4,
-        -8,
-        -8,
-        -38,
+    # Shepard-tone riser over a kickless 40 bars: break, then a long build.
+    "shepard_s_tone_x_don_t_stop_the_music_ju": [
+        ("INTRO", 1),
+        ("GROOVE", 33),
+        ("BREAK", 65),
+        ("DROP", 81),
+        ("BREAK", 113),
+        ("BUILD", 121),
+        ("DROP", 153),
+        ("OUTRO", 201),
     ],
-    high=[
-        -15,
-        -11,
-        -13,
-        -12,
-        -11,
-        -9,
-        -9,
-        -9,
-        -9,
-        -7,
-        -8,
-        -8,
-        -7,
-        -8,
-        -8,
-        -8,
-        -8,
-        -7,
-        -8,
-        -8,
-        -8,
-        -8,
-        -12,
-        -13,
-        -14,
-        -19,
-        -23,
-        -20,
-        -22,
-        -16,
-        -13,
-        -8,
-        -4,
-        -4,
-        -5,
-        -6,
-        -6,
-        -6,
-        -6,
-        -6,
-        -6,
-        -6,
-        -7,
-        -7,
-        -7,
-        -10,
-        -11,
-        -41,
+    # Kickless intro and 8-bar mini-breaks; mids/highs climb from 73 to the drop at 89.
+    "count_on_you": [
+        ("INTRO", 1),
+        ("GROOVE", 25),
+        ("BREAK", 41),
+        ("DROP", 49),
+        ("BREAK", 65),
+        ("BUILD", 73),
+        ("DROP", 89),
+        ("BREAK", 105),
+        ("DROP", 113),
+        ("OUTRO", 129),
     ],
-)
-# Don't Touch That Dial: 4-bar kick drops are fills, the real break is bars 105-120.
-DIAL = profile(
-    low=[
-        -2,
-        -2,
-        -2,
-        -32,
-        -1,
-        -1,
-        -2,
-        -36,
-        -1,
-        -2,
-        -1,
-        -2,
-        -1,
-        -2,
-        -38,
-        -2,
-        -1,
-        -1,
-        -1,
-        -2,
-        -1,
-        -2,
-        -1,
-        -1,
-        -1,
-        -2,
-        -29,
-        -25,
-        -28,
-        -28,
-        -2,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -4,
-        -1,
-        -1,
-        -1,
-        -1,
-        -3,
-        -50,
-        -100,
+    # 4-bar kick cuts are fills; a kick hit on bar 112 does not split the break.
+    "don_t_touch_that_dial": [("INTRO", 1), ("GROOVE", 17), ("BREAK", 105), ("DROP", 121), ("OUTRO", 169)],
+    # Fading breaks straight back into the drop: no build.
+    "perplexer_original_mix": [
+        ("INTRO", 1),
+        ("GROOVE", 49),
+        ("BREAK", 81),
+        ("DROP", 97),
+        ("BREAK", 121),
+        ("DROP", 129),
+        ("OUTRO", 157),
     ],
-    mid=[
-        -4,
-        -4,
-        -4,
-        -15,
-        -2,
-        -1,
-        -3,
-        -12,
-        -1,
-        -2,
-        -2,
-        -2,
-        -1,
-        -1,
-        -8,
-        -3,
-        -1,
-        -2,
-        -1,
-        -2,
-        -1,
-        -2,
-        -1,
-        -1,
-        -1,
-        -2,
-        -7,
-        -9,
-        -14,
-        -10,
-        -2,
-        -1,
-        -1,
-        -2,
-        -2,
-        -1,
-        -2,
-        -3,
-        -2,
-        -1,
-        -2,
-        -2,
-        -5,
-        -17,
-        -56,
+    "work": [
+        ("INTRO", 1),
+        ("GROOVE", 33),
+        ("BREAK", 57),
+        ("DROP", 73),
+        ("BREAK", 97),
+        ("DROP", 121),
+        ("OUTRO", 145),
     ],
-    high=[
-        -8,
-        -8,
-        -7,
-        -7,
-        -6,
-        -6,
-        -3,
-        -4,
-        -3,
-        -3,
-        -2,
-        -3,
-        -2,
-        -2,
-        -1,
-        -5,
-        -3,
-        -3,
-        -2,
-        -2,
-        -2,
-        -2,
-        -5,
-        -3,
-        -4,
-        -4,
-        -2,
-        -2,
-        -2,
-        -3,
-        -2,
-        -2,
-        -2,
-        -2,
-        -2,
-        -1,
-        -2,
-        -1,
-        -3,
-        -2,
-        -2,
-        -2,
-        -1,
-        -2,
-        -52,
+    "beat_goes": [
+        ("INTRO", 1),
+        ("GROOVE", 33),
+        ("BREAK", 65),
+        ("DROP", 81),
+        ("BREAK", 105),
+        ("BUILD", 133),
+        ("DROP", 137),
+        ("OUTRO", 165),
     ],
-)
-# Count On You: several 8-bar breaks, a big break with a build, then drops.
-COUNT_ON_YOU = profile(
-    low=[
-        -1,
-        -1,
-        -1,
-        -1,
-        -18,
-        -24,
-        0,
-        0,
-        0,
-        0,
-        -15,
-        -21,
-        0,
-        0,
-        0,
-        0,
-        -17,
-        -46,
-        -50,
-        -44,
-        -38,
-        -41,
-        0,
-        0,
-        0,
-        0,
-        -16,
-        -21,
-        0,
-        0,
-        0,
-        0,
-        -17,
-        -1,
-        -1,
-        -1,
-        -1,
+    # Bass-less bars then a pre-drop cut (105-111) and one full bar: build, drop at 113.
+    "y_dontchu_the_gang_raw_remix_du_mad": [
+        ("INTRO", 1),
+        ("GROOVE", 17),
+        ("BREAK", 49),
+        ("DROP", 65),
+        ("BREAK", 97),
+        ("BUILD", 105),
+        ("DROP", 113),
+        ("OUTRO", 177),
     ],
-    mid=[
-        -7,
-        -8,
-        -7,
-        -6,
-        -7,
-        -5,
-        -5,
-        -4,
-        -5,
-        -5,
-        -6,
-        -7,
-        -5,
-        -5,
-        -5,
-        -4,
-        -6,
-        -9,
-        -14,
-        -9,
-        -6,
-        -4,
-        -5,
-        -5,
-        -5,
-        -4,
-        -6,
-        -7,
-        -5,
-        -5,
-        -5,
-        -4,
-        -8,
-        -7,
-        -6,
-        -7,
-        -7,
-    ],
-    high=[
-        -1,
-        -1,
-        -1,
-        -1,
-        -14,
-        -14,
-        -2,
-        -2,
-        -3,
-        -2,
-        -14,
-        -16,
-        -2,
-        -2,
-        -3,
-        -2,
-        -16,
-        -12,
-        -18,
-        -14,
-        -12,
-        -7,
-        -2,
-        -2,
-        -3,
-        -2,
-        -14,
-        -17,
-        -2,
-        -2,
-        -3,
-        -2,
-        -17,
-        0,
-        -1,
-        -1,
-        -1,
-    ],
-)
+}
 
 
-def test_jetsetter():
-    assert layout(JETSETTER) == [
-        ("INTRO", 0, 8),
-        ("GROOVE", 8, 48),
-        ("BREAK", 48, 72),
-        ("DROP", 72, 88),
-        ("OUTRO", 88, 92),
-    ]
+@pytest.mark.parametrize("name", sorted(EXPECTED))
+def test_real_tracks(name):
+    assert layout(features(name)) == EXPECTED[name]
 
 
-def test_long_intro_break_build_drop_outro():
-    assert layout(LONG_INTRO) == [
-        ("INTRO", 0, 32),
-        ("GROOVE", 32, 84),
-        ("BREAK", 84, 120),
-        ("BUILD", 120, 128),
-        ("DROP", 128, 180),
-        ("OUTRO", 180, 192),
-    ]
+def test_every_fixture_has_an_expected_layout():
+    assert sorted(p.stem for p in FIXTURES.glob("*.json")) == sorted(EXPECTED)
 
 
-def test_short_kick_drops_are_fills_not_breaks():
-    assert layout(DIAL) == [
-        ("INTRO", 0, 32),
-        ("GROOVE", 32, 104),
-        ("BREAK", 104, 120),
-        ("DROP", 120, 172),
-        ("OUTRO", 172, 180),
-    ]
+@pytest.mark.parametrize("name", sorted(EXPECTED))
+def test_sections_tile_the_track(name):
+    bands = features(name)
+    sections = detect_sections(bands)
+    assert sections[0].start_bar == 0 and sections[-1].end_bar == len(bands)
+    assert all(a.end_bar == b.start_bar for a, b in zip(sections, sections[1:], strict=False))
+    assert all(0 < s.confidence <= 1 for s in sections)
+    assert all(s.end_bar - s.start_bar >= 4 for s in sections)
 
 
-def test_several_breaks_and_a_build():
-    assert layout(COUNT_ON_YOU) == [
-        ("GROOVE", 0, 16),
-        ("BREAK", 16, 24),
-        ("DROP", 24, 40),
-        ("BREAK", 40, 48),
-        ("DROP", 48, 64),
-        ("BREAK", 64, 80),
-        ("BUILD", 80, 88),
-        ("DROP", 88, 104),
-        ("BREAK", 104, 112),
-        ("DROP", 112, 148),
-    ]
+def synthetic(*parts: tuple[int, float, float]) -> np.ndarray:
+    """Bars of (count, kick dB, bass dB) with flat mids/highs."""
+    rows = [[kick, bass, -2.0, -2.0] for count, kick, bass in parts for _ in range(count)]
+    return np.array(rows)
 
 
-def test_sections_tile_the_track_and_have_confidences():
-    for bands in (JETSETTER, LONG_INTRO, DIAL, COUNT_ON_YOU):
-        sections = detect_sections(bands)
-        assert sections[0].start_bar == 0 and sections[-1].end_bar == len(bands)
-        assert all(a.end_bar == b.start_bar for a, b in zip(sections, sections[1:], strict=False))
-        assert all(0 < s.confidence <= 1 for s in sections)
+def test_fake_drop_belongs_to_the_build():
+    """Full groove back for 4 bars after the break, cut again, then the real drop."""
+    bands = synthetic((32, 0, 0), (16, -30, -40), (4, 0, 0), (4, -30, -40), (32, 0, 0))
+    assert layout(bands) == [("GROOVE", 1), ("BREAK", 33), ("BUILD", 49), ("DROP", 57)]
 
 
-def test_too_short_tracks_have_no_sections():
-    assert detect_sections(np.zeros((8, 3))) == []
+def test_kick_without_bass_is_not_a_drop():
+    """Kick back at full level without the bassline for 8 bars: the drop waits for the bass."""
+    bands = synthetic((32, 0, 0), (16, -30, -40), (8, 0, -25), (32, 0, 0))
+    assert layout(bands) == [("GROOVE", 1), ("BREAK", 33), ("BUILD", 49), ("DROP", 57)]
 
 
-def test_a_kick_hit_inside_a_break_does_not_split_it():
-    """Don't Touch That Dial, per-bar low band of bars 97-128: a kick hit on bar 112 splits the break."""
-    low = (
-        [-1] * 64
-        + [
-            -1,
-            -1,
-            -1,
-            -1,
-            -1,
-            -1,
-            -1,
-            -6,
-            -26,
-            -32,
-            -25,
-            -32,
-            -25,
-            -29,
-            -36,
-            -8,
-            -26,
-            -32,
-            -25,
-            -30,
-            -40,
-            -32,
-            -36,
-            -3,
-        ]
-        + [-1] * 40
-    )
-    bands = np.column_stack([low, np.full(len(low), -2.0), np.full(len(low), -2.0)])
-    assert [(s.type, s.start_bar, s.end_bar) for s in detect_sections(bands)] == [
-        ("GROOVE", 0, 72),
-        ("BREAK", 72, 88),
-        ("DROP", 88, 128),
-    ]
+def test_too_short_tracks_have_no_sections_and_flat_ones_are_one_groove():
+    assert detect_sections(np.zeros((8, 4))) == []
+    # Levels are relative to the track itself: a track that never changes is one long groove.
+    assert layout(synthetic((32, -30, -40))) == [("GROOVE", 1)]
