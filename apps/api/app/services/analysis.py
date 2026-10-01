@@ -10,13 +10,13 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.audio import rhythm
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import AudioAnalysis, Beatgrid, Track
+from app.models import AudioAnalysis, Beatgrid, Section, Track
 from app.services.folders import is_sample_folder
 from app.services.jobs import JobStatus
 
@@ -62,7 +62,15 @@ def save(session: Session, track: Track, result: dict, reset_grid: bool = False)
             session.add(analysis)
         analysis.musical_key, analysis.camelot_key = result["musical_key"], result["camelot_key"]
         analysis.key_strength, analysis.energy_curve = result["key_strength"], result["energy_curve"]
+        analysis.vocal_curve = result["vocal_curve"]
+        analysis.vocal_probability = result["vocal_probability"]
+        analysis.instrumental_probability = round(1 - result["vocal_probability"], 3)
         analysis.analyzed_at = datetime.now()
+
+        # Detected sections are replaced; sections typed by the user (future cue editor) are kept.
+        session.execute(delete(Section).where(Section.track_id == copy.id, Section.source == "AUDIO"))
+        for section in result["sections"]:
+            session.add(Section(track_id=copy.id, analyzer_version=rhythm.ANALYZER_VERSION, **section))
 
         # Fill the catalogue only where the file had nothing.
         if copy.bpm is None:
@@ -182,3 +190,9 @@ def start_in_background(limit: int | None = None) -> None:
 
 def request_stop() -> None:
     status.stop_requested = True
+
+
+def sections_of(session: Session, track_id) -> list[Section]:
+    return list(
+        session.scalars(select(Section).where(Section.track_id == track_id).order_by(Section.start_bar))
+    )

@@ -41,6 +41,7 @@ class AudioAnalysis(Base):
     camelot_key: Mapped[str | None] = mapped_column(Text)
     key_strength: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
     energy_curve: Mapped[list[float] | None] = mapped_column(JSONB)
+    vocal_curve: Mapped[list[float] | None] = mapped_column(JSONB)
     analyzed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     analyzer_version: Mapped[str] = mapped_column(Text)
 
@@ -90,3 +91,22 @@ class Beatgrid(Base):
     source: Mapped[str] = mapped_column(Text, default="ANALYSIS", server_default="ANALYSIS")
     analyzer_version: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class Section(Base):
+    __tablename__ = "sections"
+    __table_args__ = (
+        CheckConstraint("end_bar > start_bar", name="sections_check"),
+        Index("ix_sections_track", "track_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    track_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"))
+    type: Mapped[str] = mapped_column(Text)
+    start_bar: Mapped[int] = mapped_column(Integer)
+    end_bar: Mapped[int] = mapped_column(Integer)
+    confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
+    source: Mapped[str] = mapped_column(Text, default="AUDIO", server_default="AUDIO")
+    analyzer_version: Mapped[str | None] = mapped_column(Text)

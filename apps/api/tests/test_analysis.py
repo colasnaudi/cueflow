@@ -48,6 +48,12 @@ def fake_result(**overrides):
         "camelot_key": "8A",
         "key_strength": 0.8,
         "energy_curve": [0.5, 1.0],
+        "sections": [
+            {"type": "INTRO", "start_bar": 0, "end_bar": 16, "confidence": 0.9},
+            {"type": "BREAK", "start_bar": 16, "end_bar": 32, "confidence": 0.8},
+        ],
+        "vocal_curve": [0.1, 0.9],
+        "vocal_probability": 0.4,
         "duration": 190.0,
     } | overrides
 
@@ -68,6 +74,14 @@ def test_downbeat_phase_votes_on_the_grid():
     downbeats = 0.3 + period * np.array([2, 6, 10, 14, 18, 23])  # one outlier
     assert rhythm.downbeat_phase(downbeats, 0.3, period) == (2, pytest.approx(5 / 6, abs=1e-3))
     assert rhythm.downbeat_phase(np.array([]), 0.3, period) == (0, 0.0)
+
+
+def test_vocals_are_averaged_per_bar():
+    from app.audio.vocals import per_bar
+
+    timeline = np.array([0.0, 0.2, 1.0, 1.0, 0.5])  # one value per ~1 s
+    assert per_bar(timeline, np.array([0.0, 2.0, 4.0, 4.4])) == [0.1, 1.0, 0.5]
+    assert per_bar(np.array([]), np.array([0.0, 2.0])) == []
 
 
 def test_bar_energy_is_relative_to_the_loudest_bar():
@@ -166,6 +180,13 @@ def test_analysis_api(client, library, monkeypatch):
     monkeypatch.setattr(rhythm, "analyse", lambda path: rhythm.RhythmAnalysis(**fake_result(bpm=128.0)))
     body = client.post(f"/tracks/{track_id}/analysis").json()
     assert (body["beatgrid"]["bpm"], body["camelot_key"], len(body["energy_curve"])) == (128.0, "8A", 2)
+    assert [(s["type"], s["start_bar"], s["end_bar"], s["source"]) for s in body["sections"]] == [
+        ("INTRO", 0, 16, "AUDIO"),
+        ("BREAK", 16, 32, "AUDIO"),
+    ]
+    assert (body["vocal_curve"], body["vocal_probability"]) == ([0.1, 0.9], 0.4)
+    # Re-analysing replaces the detected sections instead of piling them up.
+    assert len(client.post(f"/tracks/{track_id}/analysis").json()["sections"]) == 2
 
     body = client.post(f"/tracks/{track_id}/beatgrid/shift", json={"beats": 1}).json()
     assert (body["beatgrid"]["downbeat_offset"], body["beatgrid"]["source"]) == (2, "USER")
@@ -209,4 +230,10 @@ def test_library_job_end_to_end(library):
         grid = session.get(Beatgrid, loop.id)
     assert float(grid.bpm) == 124.0
     assert (float(loop.bpm), loop.bpm_source) == (124.0, "ANALYSIS")
+    with SessionLocal() as session:
+        sections = analysis.sections_of(session, loop.id)
+        dsp = analysis.dsp_analysis(session, loop.id)
+    # A constant kick from start to end is one groove, and a kick loop has no voice.
+    assert [s.type for s in sections] == ["GROOVE"]
+    assert len(dsp.vocal_curve) == len(dsp.energy_curve) and float(dsp.vocal_probability) < 0.5
     assert analysis.run(workers=1).total == 0  # nothing left to analyse

@@ -204,12 +204,25 @@ class BeatgridOut(BaseModel):
     source: str
 
 
+class SectionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    type: str
+    start_bar: int
+    end_bar: int
+    confidence: float | None
+    source: str
+
+
 class TrackAnalysis(BaseModel):
     beatgrid: BeatgridOut | None
     musical_key: str | None
     camelot_key: str | None
     key_strength: float | None
     energy_curve: list[float]
+    sections: list[SectionOut]
+    vocal_curve: list[float]
+    vocal_probability: float | None
     analyzed_at: datetime | None
 
 

@@ -20,6 +20,9 @@ def analysis_view(session: Session, track_id: uuid.UUID) -> TrackAnalysis:
         camelot_key=dsp.camelot_key if dsp else None,
         key_strength=dsp.key_strength if dsp else None,
         energy_curve=dsp.energy_curve or [] if dsp else [],
+        sections=analysis.sections_of(session, track_id),
+        vocal_curve=dsp.vocal_curve or [] if dsp else [],
+        vocal_probability=dsp.vocal_probability if dsp else None,
         analyzed_at=dsp.analyzed_at if dsp else None,
     )
 
