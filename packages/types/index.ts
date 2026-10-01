@@ -257,6 +257,8 @@ export interface Cue {
   confidence: number | null;
   source: "ANALYSIS" | "USER";
   approved: boolean;
+  /** AUTO: approved on generation (replaced by a re-analysis); USER: validated by you (kept). */
+  approved_by: "AUTO" | "USER" | null;
 }
 
 export interface ExportPreview {
