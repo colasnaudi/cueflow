@@ -6,6 +6,7 @@ import type {
   ExportPreview,
   Facets,
   FolderNode,
+  LiveXml,
   ReviewItem,
   ReviewPage,
   ReviewStatus,
@@ -70,7 +71,8 @@ export const api = {
   bulkApprove: (trackIds: string[]) =>
     request<{ approved: number }>("/review/genres/bulk-approve", { method: "POST", body: JSON.stringify({ track_ids: trackIds }) }),
   analysisStatus: () => request<AnalysisStatus>("/analysis/genres"),
-  startAnalysis: () => request<{ started: boolean }>("/analysis/genres", { method: "POST" }),
+  startAnalysis: (folder?: string) =>
+    request<{ started: boolean }>(`/analysis/genres?${toSearchParams({ folder })}`, { method: "POST" }),
   stopAnalysis: () => request<AnalysisStatus>("/analysis/genres/stop", { method: "POST" }),
 
   trackAnalysis: (id: string) => request<TrackAnalysis>(`/tracks/${id}/analysis`),
@@ -105,7 +107,18 @@ export const api = {
     return name;
   },
   audioStatus: () => request<AnalysisStatus>("/analysis/audio"),
-  startAudio: () => request<{ started: boolean }>("/analysis/audio", { method: "POST" }),
+  startAudio: (options: { folder?: string; force?: boolean } = {}) =>
+    request<{ started: boolean }>(`/analysis/audio?${toSearchParams(options)}`, { method: "POST" }),
+  revealFolder: (folder: string) =>
+    fetch(`${API_URL}/library/reveal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folder }),
+    }).then(async (response) => {
+      if (!response.ok) throw new Error((await response.json().catch(() => null))?.detail ?? response.statusText);
+    }),
+  liveXml: () => request<LiveXml>("/export/rekordbox/live"),
+  refreshLiveXml: () => request<LiveXml>("/export/rekordbox/live", { method: "POST" }),
   stopAudio: () => request<AnalysisStatus>("/analysis/audio/stop", { method: "POST" }),
 
   duplicates: (kind: DuplicateKind, offset = 0, limit = 50) =>

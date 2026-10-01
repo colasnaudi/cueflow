@@ -1,9 +1,10 @@
 "use client";
 
 import type { FolderNode } from "@cueflow/types";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Download, TriangleAlert } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Copy, Download, RefreshCw, TriangleAlert } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { ErrorNotice } from "@/components/ui/error-notice";
@@ -28,6 +29,59 @@ function Option({ checked, onChange, title, children }: { checked: boolean; onCh
   );
 }
 
+function LiveXmlCard() {
+  const client = useQueryClient();
+  const live = useQuery({ queryKey: ["live-xml"], queryFn: api.liveXml });
+  const refresh = useMutation({
+    mutationFn: api.refreshLiveXml,
+    onSuccess: (value) => {
+      client.setQueryData(["live-xml"], value);
+      toast.success(`Rekordbox XML updated: ${value.tracks} tracks.`);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const path = live.data?.path;
+
+  return (
+    <section className="flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+      <h2 className="text-sm font-semibold">Automatic: Rekordbox reads Cueflow&apos;s XML</h2>
+      <p className="text-xs text-muted-foreground">
+        After every audio analysis Cueflow rewrites one XML file with all analysed tracks and their cues, with
+        playlists mirroring your folders. Point Rekordbox to it once; no download needed afterwards.
+      </p>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 truncate rounded bg-muted px-2 py-1.5 text-xs" title={path}>
+          {path ?? "…"}
+        </code>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!path}
+          onClick={() => path && navigator.clipboard.writeText(path).then(() => toast.success("Path copied."))}
+        >
+          <Copy /> Copy
+        </Button>
+        <Button size="sm" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
+          <RefreshCw className={refresh.isPending ? "animate-spin" : undefined} /> Update now
+        </Button>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        {live.data?.exists
+          ? `Last written ${new Date(live.data.updated_at ?? "").toLocaleString()}`
+          : "Not written yet: run an audio analysis or click Update now."}
+      </p>
+      <ol className="list-decimal space-y-1 pl-5 text-xs text-muted-foreground">
+        <li>Once: Rekordbox → Preferences → Advanced → Database → rekordbox xml → Imported Library → this file.</li>
+        <li>Once: Preferences → View → Layout → tick “rekordbox xml”.</li>
+        <li>
+          Each time: in the tree, rekordbox xml → Playlists → Cueflow → the folder you want (refresh the tree if it is
+          already open), select its <strong>tracks</strong> → right click → <strong>Import To Collection</strong>.
+        </li>
+      </ol>
+    </section>
+  );
+}
+
 export default function ExportPage() {
   const [folder, setFolder] = useState("");
   const [approvedOnly, setApprovedOnly] = useState(true);
@@ -48,11 +102,14 @@ export default function ExportPage() {
         <header>
           <h1 className="text-2xl font-semibold tracking-tight">Rekordbox export</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Builds a <code>rekordbox.xml</code> with your hot cues, memory cues and beatgrids. Cueflow never touches the
-            Rekordbox database: you import the file yourself.
+            Hot cues, memory cues and beatgrids go to Rekordbox through its XML import: Cueflow never touches the
+            Rekordbox database, the last click (“Import To Collection”) stays yours.
           </p>
         </header>
 
+        <LiveXmlCard />
+
+        <h2 className="pt-2 text-sm font-semibold">Or download the XML of one folder</h2>
         <section className="flex flex-col gap-2">
           <label htmlFor="folder" className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
             Tracks of

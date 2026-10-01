@@ -49,7 +49,10 @@ export function JobControl({ id, status: fetchStatus, start, stop, invalidate, l
       {running && (
         <div className={cn("flex flex-col gap-1", !compact && "w-72")}>
           <div className="flex justify-between font-mono text-[11px] text-muted-foreground tabular-nums">
-            <span>{status?.phase === "folders" ? "Reading folders…" : `${status?.processed}/${status?.total}`}</span>
+            <span className="truncate">
+              {status?.scope && <span title={status.scope}>{status.scope.split("/").pop()?.replaceAll(":", "/")} · </span>}
+              {status?.phase === "folders" ? "Reading folders…" : status?.phase === "cues" ? "Cues…" : `${status?.processed}/${status?.total}`}
+            </span>
             <span>{progress}%</span>
           </div>
           <div className="h-1 overflow-hidden rounded bg-muted">

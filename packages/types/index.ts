@@ -159,6 +159,8 @@ export interface AnalysisStatus {
   running: boolean;
   error: string | null;
   phase: "folders" | "cues" | "audio" | null;
+  /** Folder the job is limited to (null: whole library). */
+  scope: string | null;
   total: number;
   processed: number;
   analyzed: number;
@@ -266,4 +268,12 @@ export interface ExportPreview {
   hot_cues: number;
   memory_cues: number;
   unapproved_tracks: number;
+}
+
+/** The XML file Rekordbox reads (rewritten after every audio analysis). */
+export interface LiveXml {
+  path: string;
+  exists: boolean;
+  updated_at: string | null;
+  tracks: number | null;
 }

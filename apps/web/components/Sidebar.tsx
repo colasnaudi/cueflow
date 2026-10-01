@@ -168,7 +168,7 @@ export function Sidebar() {
           id="audio"
           compact
           status={api.audioStatus}
-          start={api.startAudio}
+          start={() => api.startAudio()}
           stop={api.stopAudio}
           invalidate={AUDIO_JOB_REFRESH}
           label="Analyse audio"

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { Sidebar } from "@/components/Sidebar";
+import { Toaster } from "@/components/ui/sonner";
 import { PlayerBar } from "@/components/player/PlayerBar";
 
 import { Providers } from "./providers";
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <PlayerBar />
             </div>
           </div>
+          <Toaster theme="dark" position="bottom-right" />
         </Providers>
       </body>
     </html>

@@ -131,7 +131,7 @@ export default function ReviewPage() {
           <JobControl
             id="genres"
             status={api.analysisStatus}
-            start={api.startAnalysis}
+            start={() => api.startAnalysis()}
             stop={api.stopAnalysis}
             invalidate={GENRE_JOB_REFRESH}
             label="Analyse library"

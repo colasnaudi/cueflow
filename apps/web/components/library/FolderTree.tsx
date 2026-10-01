@@ -7,6 +7,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
+import { FolderMenu } from "@/components/library/FolderMenu";
 import { api } from "@/lib/api";
 import { SAMPLE_THRESHOLD_MS } from "@/lib/library-query";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ function Node({ node, depth, active, params }: { node: FolderNode; depth: number
 
   return (
     <li>
+      <FolderMenu path={node.path} name={node.name} count={node.count}>
       <div
         className={cn(
           "group flex items-center rounded-md pr-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -47,6 +49,7 @@ function Node({ node, depth, active, params }: { node: FolderNode; depth: number
           <span className="ml-auto pl-1 font-mono text-[10px] tabular-nums opacity-60">{node.count}</span>
         </Link>
       </div>
+      </FolderMenu>
       {expanded && node.children.length > 0 && (
         <ul>
           {node.children.map((child) => (
