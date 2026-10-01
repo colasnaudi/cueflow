@@ -58,7 +58,9 @@ def build(
     include_beatgrid: bool = True,
     mp3_offset_ms: float = 0.0,
     name: str | None = None,
+    folder_tree: Path | None = None,
 ) -> bytes:
+    """`folder_tree`: the music root — playlists then mirror the folders under it instead of one playlist."""
     root = ET.Element("DJ_PLAYLISTS", Version="1.0.0")
     ET.SubElement(root, "PRODUCT", Name="Cueflow", Version="0.4.0", Company="Cueflow")
     collection = ET.SubElement(root, "COLLECTION", Entries=str(len(items)))
@@ -113,17 +115,11 @@ def build(
             )
 
     playlists = ET.SubElement(root, "PLAYLISTS")
-    folder = ET.SubElement(playlists, "NODE", Type="0", Name="ROOT", Count="1")
-    playlist = ET.SubElement(
-        folder,
-        "NODE",
-        Type="1",
-        Name=name or f"Cueflow {datetime.now():%Y-%m-%d %H:%M}",
-        KeyType="0",
-        Entries=str(len(items)),
-    )
-    for track_id in range(1, len(items) + 1):
-        ET.SubElement(playlist, "TRACK", Key=str(track_id))
+    if folder_tree is not None:
+        _folder_playlists(playlists, items, folder_tree)
+    else:
+        folder = ET.SubElement(playlists, "NODE", Type="0", Name="ROOT", Count="1")
+        _playlist(folder, name or f"Cueflow {datetime.now():%Y-%m-%d %H:%M}", range(1, len(items) + 1))
 
     ET.indent(root)
     return ET.tostring(root, encoding="UTF-8", xml_declaration=True)
@@ -148,3 +144,86 @@ def collect(session, folder: str | None, approved_only: bool) -> list[ExportItem
             continue
         items.append(ExportItem(track, grid, cues))
     return items
+
+
+def _playlist(parent: ET.Element, name: str, track_ids) -> None:
+    ids = list(track_ids)
+    node = ET.SubElement(parent, "NODE", Type="1", Name=name, KeyType="0", Entries=str(len(ids)))
+    for track_id in ids:
+        ET.SubElement(node, "TRACK", Key=str(track_id))
+
+
+def _folder_playlists(playlists: ET.Element, items: list[ExportItem], root: Path) -> None:
+    """Rekordbox folders mirroring the music folders. A folder with sub-folders gets an "All tracks" playlist
+    (everything below it, to import a whole branch at once) next to its sub-folders."""
+    tree: dict = {}
+    for track_id, item in enumerate(items, start=1):
+        try:
+            parts = Path(item.track.path).relative_to(root).parts[:-1]
+        except ValueError:
+            parts = ()
+        node = tree
+        for part in parts:
+            node = node.setdefault(part, {})
+        node.setdefault("__tracks__", []).append(track_id)
+
+    def all_ids(node: dict) -> list[int]:
+        return node.get("__tracks__", []) + [
+            i for k, child in node.items() if k != "__tracks__" for i in all_ids(child)
+        ]
+
+    def add(parent: ET.Element, name: str, node: dict) -> None:
+        children = sorted((k for k in node if k != "__tracks__"), key=str.lower)
+        if not children:
+            _playlist(parent, name, node.get("__tracks__", []))
+            return
+        folder = ET.SubElement(parent, "NODE", Type="0", Name=name, Count=str(len(children) + 1))
+        _playlist(folder, f"{name} · all tracks", all_ids(node))
+        for child in children:
+            add(folder, child.replace(":", "/"), node[child])
+
+    top = sorted((k for k in tree if k != "__tracks__"), key=str.lower)
+    root_node = ET.SubElement(playlists, "NODE", Type="0", Name="ROOT", Count=str(len(top) + 1))
+    cueflow = ET.SubElement(root_node, "NODE", Type="0", Name="Cueflow", Count=str(len(top) + 1))
+    _playlist(cueflow, "All analysed tracks", range(1, len(items) + 1))
+    for name in top:
+        add(cueflow, name.replace(":", "/"), tree[name])
+
+
+def live_path() -> Path:
+    from app.config import get_settings
+
+    settings = get_settings()
+    return (
+        Path(settings.rekordbox_xml_path)
+        if settings.rekordbox_xml_path
+        else settings.data_dir / "rekordbox" / "cueflow.xml"
+    )
+
+
+def write_live(session) -> dict:
+    """The XML Rekordbox is pointed at once: every analysed track with cues, playlists mirroring the folders.
+    Written atomically so Rekordbox never reads a half-written file."""
+    from app.config import get_settings, music_root
+
+    settings = get_settings()
+    items = collect(session, None, approved_only=True)
+    xml = build(
+        items, include_beatgrid=True, mp3_offset_ms=settings.rekordbox_mp3_offset_ms, folder_tree=music_root()
+    )
+    path = live_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_bytes(xml)
+    tmp.replace(path)
+    return live_status(len(items))
+
+
+def live_status(tracks: int | None = None) -> dict:
+    path = live_path()
+    return {
+        "path": str(path),
+        "exists": path.exists(),
+        "updated_at": datetime.fromtimestamp(path.stat().st_mtime) if path.exists() else None,
+        "tracks": tracks,
+    }

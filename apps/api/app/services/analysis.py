@@ -23,6 +23,7 @@ from app.services import cues
 from app.services.cue_engine import plan_cues
 from app.services.folders import is_sample_folder
 from app.services.jobs import JobStatus
+from app.services.queries import folder_filter
 
 log = logging.getLogger(__name__)
 
@@ -122,13 +123,19 @@ def shift_downbeat(session: Session, track: Track, beats: int) -> None:
             grid.source = "USER"
 
 
-def eligible_tracks(session: Session) -> list[Track]:
-    """Unanalysed real tracks (not samples), one copy per file, tracks without BPM/key first."""
-    analysed = select(AudioAnalysis.track_id).where(AudioAnalysis.analyzer_version == rhythm.ANALYZER_VERSION)
+def eligible_tracks(session: Session, folder: str | None = None, force: bool = False) -> list[Track]:
+    """Real tracks (not samples), one copy per file, tracks without BPM/key first. Only unanalysed ones unless
+    `force` (re-analyse everything; grids and cues the DJ locked are kept by `save`)."""
+    query = select(Track).where(Track.duration_ms >= MIN_DURATION_MS)
+    if not force:
+        analysed = select(AudioAnalysis.track_id).where(
+            AudioAnalysis.analyzer_version == rhythm.ANALYZER_VERSION
+        )
+        query = query.where(Track.id.not_in(analysed))
+    if folder:
+        query = query.where(folder_filter(folder))
     tracks = session.scalars(
-        select(Track)
-        .where(Track.duration_ms >= MIN_DURATION_MS, Track.id.not_in(analysed))
-        .order_by(or_(Track.bpm.is_(None), Track.camelot_key.is_(None)).desc(), Track.path)
+        query.order_by(or_(Track.bpm.is_(None), Track.camelot_key.is_(None)).desc(), Track.path)
     ).all()
     seen: set[str] = set()
     result = []
@@ -144,12 +151,14 @@ def _analyse_file(path: str) -> dict:
     return rhythm.analyse(path).as_dict()
 
 
-def run(limit: int | None = None, workers: int | None = None) -> JobStatus:
+def run(
+    limit: int | None = None, workers: int | None = None, folder: str | None = None, force: bool = False
+) -> JobStatus:
     global status
     with _lock:
         if status.running:
             raise RuntimeError("Audio analysis is already running")
-        status = JobStatus(state="running", running=True, phase="audio", started_at=time.time())
+        status = JobStatus(state="running", running=True, phase="audio", scope=folder, started_at=time.time())
 
     try:
         with SessionLocal() as session:
@@ -161,7 +170,7 @@ def run(limit: int | None = None, workers: int | None = None) -> JobStatus:
             session.commit()
 
             status.phase = "audio"
-            tracks = eligible_tracks(session)[:limit]
+            tracks = eligible_tracks(session, folder, force)[:limit]
             status.total = len(tracks)
             by_path = {t.path: t for t in tracks}
             # Workers are recycled every 50 tracks so a library-wide run keeps a flat memory footprint.
@@ -186,6 +195,7 @@ def run(limit: int | None = None, workers: int | None = None) -> JobStatus:
                     if status.stop_requested:
                         pool.shutdown(wait=True, cancel_futures=True)
                         break
+            refresh_live_xml(session)
         status.state = "stopped" if status.stop_requested else "completed"
     except Exception as exc:
         status.state, status.error = "failed", str(exc)
@@ -197,13 +207,13 @@ def run(limit: int | None = None, workers: int | None = None) -> JobStatus:
     return status
 
 
-def start_in_background(limit: int | None = None) -> None:
+def start_in_background(limit: int | None = None, folder: str | None = None, force: bool = False) -> None:
     if status.running:
         raise RuntimeError("Audio analysis is already running")
 
     def job() -> None:
         try:
-            run(limit)
+            run(limit, folder=folder, force=force)
         except Exception:  # recorded in status (state=failed); keep the traceback in the logs
             log.exception("audio analysis failed")
 
@@ -232,3 +242,14 @@ def tracks_without_cues(session: Session) -> list[Track]:
     has_cues = select(Cue.track_id)
     analysed = select(AudioAnalysis.track_id).where(AudioAnalysis.analyzer_version == rhythm.ANALYZER_VERSION)
     return list(session.scalars(select(Track).where(Track.id.in_(analysed), Track.id.not_in(has_cues))))
+
+
+def refresh_live_xml(session: Session) -> None:
+    """Rekordbox reads the live XML from a fixed path: keep it current after every analysis."""
+    from app.services import rekordbox
+
+    try:
+        rekordbox.write_live(session)
+    except OSError as exc:  # the analysis itself succeeded; report, do not fail the job
+        log.warning("could not update the live Rekordbox XML: %s", exc)
+        status.errors.append(f"Rekordbox XML not updated: {exc}")

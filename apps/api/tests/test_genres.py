@@ -135,7 +135,7 @@ def test_job_states_completed_stopped_failed(library, monkeypatch):
     assert genres.run().state == "completed"
 
     monkeypatch.setattr(
-        genres, "eligible_tracks", lambda session: (_ for _ in ()).throw(RuntimeError("db down"))
+        genres, "eligible_tracks", lambda session, *args: (_ for _ in ()).throw(RuntimeError("db down"))
     )
     with pytest.raises(RuntimeError):
         genres.run()

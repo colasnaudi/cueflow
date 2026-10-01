@@ -13,3 +13,4 @@ data/analysis/*
 .DS_Store
 data/models/*
 data/exports/*
+data/rekordbox/*

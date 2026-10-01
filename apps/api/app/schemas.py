@@ -263,3 +263,14 @@ class ExportPreview(BaseModel):
     hot_cues: int
     memory_cues: int
     unapproved_tracks: int
+
+
+class LiveXml(BaseModel):
+    path: str
+    exists: bool
+    updated_at: datetime | None
+    tracks: int | None
+
+
+class FolderRequest(BaseModel):
+    folder: str = Field(min_length=1)

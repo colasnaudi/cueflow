@@ -73,9 +73,15 @@ def audio_status():
 
 
 @router.post("/analysis/audio", status_code=202)
-def start_audio_analysis(limit: int | None = Query(default=None, ge=1)):
+def start_audio_analysis(
+    limit: int | None = Query(default=None, ge=1),
+    folder: str | None = Query(
+        default=None, description="Folder relative to MUSIC_ROOT, subfolders included"
+    ),
+    force: bool = Query(default=False, description="Re-analyse tracks that were already analysed"),
+):
     try:
-        analysis.start_in_background(limit)
+        analysis.start_in_background(limit, folder=folder, force=force)
     except RuntimeError as exc:
         raise HTTPException(409, str(exc)) from exc
     return {"started": True}

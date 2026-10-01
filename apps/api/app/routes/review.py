@@ -64,9 +64,9 @@ def analysis_status():
 
 
 @router.post("/analysis/genres", status_code=202)
-def start_analysis(limit: int | None = Query(default=None, ge=1)):
+def start_analysis(limit: int | None = Query(default=None, ge=1), folder: str | None = None):
     try:
-        genres.start_in_background(limit)
+        genres.start_in_background(limit, folder)
     except RuntimeError as exc:
         raise HTTPException(409, str(exc)) from exc
     return {"started": True}

@@ -9,6 +9,7 @@ class JobStatus:
     running: bool = False
     error: str | None = None
     phase: str | None = None
+    scope: str | None = None  # folder the job is limited to (None: whole library)
     total: int = 0
     processed: int = 0
     analyzed: int = 0

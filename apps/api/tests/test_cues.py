@@ -247,7 +247,9 @@ def test_job_gives_cues_to_tracks_analysed_before_cues_existed(library, monkeypa
         analysis.analyse_track(session, track)
         session.execute(delete(Cue))
         session.commit()
-        monkeypatch.setattr(analysis, "eligible_tracks", lambda session: [])  # no audio work in this test
+        monkeypatch.setattr(
+            analysis, "eligible_tracks", lambda session, *args: []
+        )  # no audio work in this test
         analysis.run(workers=1)
         assert {c.slot for c in session.scalars(select(Cue).where(Cue.track_id == track.id))} >= {
             "A",
@@ -310,6 +312,64 @@ def test_job_approves_cues_generated_before_auto_approval(library, monkeypatch):
         analysis.analyse_track(session, track)
         session.execute(update(Cue).values(approved=False, approved_by=None))
         session.commit()
-        monkeypatch.setattr(analysis, "eligible_tracks", lambda session: [])
+        monkeypatch.setattr(analysis, "eligible_tracks", lambda session, *args: [])
         analysis.run(workers=1)
         assert all(c.approved and c.approved_by == "AUTO" for c in session.scalars(select(Cue)))
+
+
+def test_folder_scoped_and_forced_audio_analysis(library, monkeypatch):
+    """Right-click a folder -> analyse: only that folder; "re-analyse" redoes already analysed tracks."""
+
+    from app.db import SessionLocal
+    from app.services import analysis
+
+    make_loop = __import__("tests.test_analysis", fromlist=["write_house_loop"]).write_house_loop
+    (library / "Other").mkdir()
+    make_loop(library / "House" / "loop.wav", bars=40)
+    make_loop(library / "Other" / "loop2.wav", bpm=126.0, bars=40)
+    scan(library)
+    with SessionLocal() as session:
+        assert [t.filename for t in analysis.eligible_tracks(session, "House")] == ["loop.wav"]
+    assert analysis.run(workers=1, folder="House").analyzed == 1
+    assert analysis.run(workers=1, folder="House").total == 0  # done, unless forced
+    assert analysis.run(workers=1, folder="House", force=True).analyzed == 1
+    with SessionLocal() as session:
+        assert [t.filename for t in analysis.eligible_tracks(session)] == ["loop2.wav"]
+
+
+def test_live_xml_mirrors_folders_and_is_rewritten_after_analysis(client, library, monkeypatch):
+    from app.services import analysis
+
+    scan(library)
+    monkeypatch.setattr(rhythm, "analyse", lambda path: fake_analysis())
+    for item in client.get("/tracks").json()["items"]:
+        client.post(f"/tracks/{item['id']}/analysis")
+    assert client.get("/export/rekordbox/live").json()["exists"] is False
+
+    status = client.post("/export/rekordbox/live").json()
+    assert (status["exists"], status["tracks"]) == (True, 3)
+    root = ET.parse(status["path"]).getroot()
+    cueflow = root.find("PLAYLISTS/NODE/NODE")
+    names = [n.get("Name") for n in cueflow]
+    assert names == ["All analysed tracks", "House"]
+    assert cueflow.find("NODE[@Name='All analysed tracks']").get("Entries") == "3"
+    assert cueflow.find("NODE[@Name='House']").get("Entries") == "2"  # leaf folder = one playlist
+
+    Path(status["path"]).unlink()
+    monkeypatch.setattr(analysis, "eligible_tracks", lambda session, *args: [])
+    analysis.run(workers=1)
+    assert Path(status["path"]).exists()  # every analysis run refreshes the file Rekordbox reads
+
+
+def test_reveal_only_opens_library_folders(client, library, monkeypatch):
+    import subprocess
+    import sys
+
+    opened = []
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(subprocess, "run", lambda args, **kwargs: opened.append(args))
+    scan(library)
+    assert client.post("/library/reveal", json={"folder": "House"}).status_code == 204
+    assert opened == [["open", str((library / "House").resolve())]]
+    assert client.post("/library/reveal", json={"folder": "../.."}).status_code == 422
+    assert client.post("/library/reveal", json={"folder": "Nope"}).status_code == 422

@@ -14,6 +14,7 @@ from app.db import SessionLocal
 from app.models import AudioAnalysis, GenreReview, GenreSuggestion, Track
 from app.services.folders import folder_genre, is_sample_folder
 from app.services.jobs import JobStatus
+from app.services.queries import folder_filter
 
 log = logging.getLogger(__name__)
 
@@ -72,13 +73,12 @@ status = JobStatus()
 _lock = threading.Lock()
 
 
-def eligible_tracks(session: Session) -> list[Track]:
+def eligible_tracks(session: Session, folder: str | None = None) -> list[Track]:
     """Real tracks (not samples), one copy per file, tracks without a genre first."""
-    tracks = session.scalars(
-        select(Track)
-        .where(or_(Track.duration_ms >= MIN_DURATION_MS, Track.duration_ms.is_(None)))
-        .order_by(Track.genre.is_not(None), Track.created_at, Track.path)
-    ).all()
+    query = select(Track).where(or_(Track.duration_ms >= MIN_DURATION_MS, Track.duration_ms.is_(None)))
+    if folder:
+        query = query.where(folder_filter(folder))
+    tracks = session.scalars(query.order_by(Track.genre.is_not(None), Track.created_at, Track.path)).all()
     seen: set[str] = set()
     result = []
     for track in tracks:
@@ -89,19 +89,21 @@ def eligible_tracks(session: Session) -> list[Track]:
     return result
 
 
-def run(limit: int | None = None) -> JobStatus:
+def run(limit: int | None = None, folder: str | None = None) -> JobStatus:
     """Phase 1: folder suggestions for every track (instant). Phase 2: audio model, track by track."""
     global status
     with _lock:
         if status.running:
             raise RuntimeError("Genre analysis is already running")
-        status = JobStatus(state="running", running=True, phase="folders", started_at=time.time())
+        status = JobStatus(
+            state="running", running=True, phase="folders", scope=folder, started_at=time.time()
+        )
 
     try:
         root = music_root()
         with SessionLocal() as session:
             vocabulary = genre_vocabulary(session)
-            tracks = eligible_tracks(session)
+            tracks = eligible_tracks(session, folder)
             analyses = {
                 a.track_id: a.styles
                 for a in session.scalars(
@@ -148,13 +150,13 @@ def run(limit: int | None = None) -> JobStatus:
     return status
 
 
-def start_in_background(limit: int | None = None) -> None:
+def start_in_background(limit: int | None = None, folder: str | None = None) -> None:
     if status.running:
         raise RuntimeError("Genre analysis is already running")
 
     def job() -> None:
         try:
-            run(limit)
+            run(limit, folder)
         except Exception:  # recorded in status (state=failed); keep the traceback in the logs
             log.exception("genre analysis failed")
 

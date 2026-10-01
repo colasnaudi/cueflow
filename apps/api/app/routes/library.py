@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.config import music_root
 from app.db import get_session
 from app.models import Tag, Track, TrackTag
-from app.schemas import Facet, Facets, FolderNode, ScanRequest, TagCount
+from app.schemas import Facet, Facets, FolderNode, FolderRequest, ScanRequest, TagCount
 from app.services import scanner
 from app.services.folders import build_tree
 
@@ -77,3 +77,18 @@ def list_tags(session: Session = Depends(get_session)):
         .order_by(func.count(TrackTag.track_id).desc(), Tag.name)
     ).all()
     return [TagCount(id=t.id, name=t.name, category=t.category, count=c) for t, c in rows]
+
+
+@router.post("/library/reveal", status_code=204)
+def reveal(body: FolderRequest):
+    """Open a library folder in the Finder (macOS). Only folders inside MUSIC_ROOT."""
+    import subprocess
+    import sys
+
+    root = music_root()
+    target = (root / body.folder.strip("/")).resolve()
+    if not target.is_relative_to(root) or not target.is_dir():
+        raise HTTPException(422, "Not a folder of the library")
+    if sys.platform != "darwin":
+        raise HTTPException(501, "Revealing folders is only supported on macOS")
+    subprocess.run(["open", str(target)], check=False, timeout=10)

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import get_session
 from app.routes.tracks import get_track
-from app.schemas import CueOut, ExportPreview, RekordboxExport
+from app.schemas import CueOut, ExportPreview, LiveXml, RekordboxExport
 from app.services import analysis, cues, rekordbox
 
 router = APIRouter(tags=["cues"])
@@ -81,3 +81,14 @@ def export_rekordbox(body: RekordboxExport, session: Session = Depends(get_sessi
         media_type="application/xml",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/export/rekordbox/live", response_model=LiveXml)
+def live_xml():
+    return rekordbox.live_status()
+
+
+@router.post("/export/rekordbox/live", response_model=LiveXml)
+def refresh_live_xml(session: Session = Depends(get_session)):
+    """Rewrite the XML Rekordbox reads (it is also rewritten after every audio analysis)."""
+    return rekordbox.write_live(session)
