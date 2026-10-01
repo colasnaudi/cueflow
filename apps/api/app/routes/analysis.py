@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db import get_session
@@ -36,15 +36,18 @@ def read_analysis(track_id: uuid.UUID, session: Session = Depends(get_session)):
 @router.post("/tracks/{track_id}/analysis", response_model=TrackAnalysis)
 def analyse_now(
     track_id: uuid.UUID,
+    background: BackgroundTasks,
     reset_grid: bool = Query(default=False, description="Also replace a beatgrid corrected by the user"),
     session: Session = Depends(get_session),
 ):
-    """Analyse one track synchronously (a few seconds)."""
+    """Analyse one track synchronously (a few seconds): grid, structure and approved cues, then the live
+    Rekordbox XML is refreshed in the background so the track is ready to import."""
     track = get_track(session, track_id)
     try:
         analysis.analyse_track(session, track, reset_grid=reset_grid)
     except (RuntimeError, ValueError) as exc:  # Essentia cannot decode the file / no rhythm found
         raise HTTPException(422, f"Analysis failed: {exc}") from exc
+    background.add_task(analysis.refresh_live_xml_now)
     return analysis_view(session, track_id)
 
 

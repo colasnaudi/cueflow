@@ -253,3 +253,14 @@ def refresh_live_xml(session: Session) -> None:
     except OSError as exc:  # the analysis itself succeeded; report, do not fail the job
         log.warning("could not update the live Rekordbox XML: %s", exc)
         status.errors.append(f"Rekordbox XML not updated: {exc}")
+
+
+def refresh_live_xml_now() -> None:
+    """Rewrite the live Rekordbox XML in its own session (after a single-track analysis)."""
+    from app.services import rekordbox
+
+    try:
+        with SessionLocal() as session:
+            rekordbox.write_live(session)
+    except OSError as exc:
+        log.warning("could not update the live Rekordbox XML: %s", exc)

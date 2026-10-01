@@ -344,7 +344,7 @@ def test_live_xml_mirrors_folders_and_is_rewritten_after_analysis(client, librar
     monkeypatch.setattr(rhythm, "analyse", lambda path: fake_analysis())
     for item in client.get("/tracks").json()["items"]:
         client.post(f"/tracks/{item['id']}/analysis")
-    assert client.get("/export/rekordbox/live").json()["exists"] is False
+    assert client.get("/export/rekordbox/live").json()["exists"] is True  # each single analysis writes it
 
     status = client.post("/export/rekordbox/live").json()
     assert (status["exists"], status["tracks"]) == (True, 3)
@@ -373,3 +373,18 @@ def test_reveal_only_opens_library_folders(client, library, monkeypatch):
     assert opened == [["open", str((library / "House").resolve())]]
     assert client.post("/library/reveal", json={"folder": "../.."}).status_code == 422
     assert client.post("/library/reveal", json={"folder": "Nope"}).status_code == 422
+
+
+def test_analysing_one_track_approves_its_cues_and_updates_the_rekordbox_xml(client, library, monkeypatch):
+    """One click: analyse -> cues generated, approved and in the XML Rekordbox reads."""
+    scan(library)
+    track_id = client.get("/tracks", params={"q": "jetsetter"}).json()["items"][0]["id"]
+    monkeypatch.setattr(rhythm, "analyse", lambda path: fake_analysis())
+    client.post(f"/tracks/{track_id}/analysis")
+
+    cues = client.get(f"/tracks/{track_id}/cues").json()
+    assert cues and all(c["approved"] for c in cues)
+    live = client.get("/export/rekordbox/live").json()
+    assert live["exists"]
+    marks = ET.parse(live["path"]).getroot().findall("COLLECTION/TRACK/POSITION_MARK")
+    assert {m.get("Name") for m in marks} >= {"START", "BREAK", "DROP"}
