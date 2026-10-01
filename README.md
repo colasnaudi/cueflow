@@ -305,6 +305,7 @@ and adjust:
 | `pnpm db:down` | Stop PostgreSQL while keeping its Docker volume |
 | `pnpm scan` | Scan `MUSIC_ROOT` from the command line |
 | `pnpm scan /path/to/music` | Scan a specific folder |
+| `pnpm scan --reread` | Also re-read the tags of unchanged files (after a reader update) |
 | `pnpm test` | Run the API test suite against a throwaway test database |
 
 ## API surface
