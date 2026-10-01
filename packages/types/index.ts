@@ -215,6 +215,17 @@ export interface Beatgrid {
   source: "ANALYSIS" | "USER";
 }
 
+export type SectionType = "INTRO" | "GROOVE" | "BREAK" | "BUILD" | "DROP" | "OUTRO";
+
+/** A part of the track in musical positions: bars counted from bar 1 of the beatgrid (0-based, end exclusive). */
+export interface Section {
+  type: SectionType;
+  start_bar: number;
+  end_bar: number;
+  confidence: number | null;
+  source: "AUDIO" | "USER";
+}
+
 export interface TrackAnalysis {
   beatgrid: Beatgrid | null;
   musical_key: string | null;
@@ -222,5 +233,10 @@ export interface TrackAnalysis {
   key_strength: number | null;
   /** One 0-1 value per bar. */
   energy_curve: number[];
+  sections: Section[];
+  /** Voice probability per bar. */
+  vocal_curve: number[];
+  /** Share of the track with a voice (0-1). */
+  vocal_probability: number | null;
   analyzed_at: string | null;
 }

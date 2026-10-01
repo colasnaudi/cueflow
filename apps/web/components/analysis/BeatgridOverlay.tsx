@@ -1,40 +1,58 @@
 import type { TrackAnalysis } from "@cueflow/types";
 
-import { barStarts } from "@/lib/beatgrid";
+import { SECTION_STYLE, barStarts, barTime } from "@/lib/beatgrid";
 
 const PHRASE_BARS = 8;
 
-/** Bar lines (phrase every 8 bars, numbered) and a per-bar energy strip, aligned on the waveform. */
+/** Sections, bar lines (phrase every 8 bars, numbered), vocal and energy strips, aligned on the waveform. */
 export function BeatgridOverlay({ analysis, duration }: { analysis: TrackAnalysis; duration: number }) {
   if (!analysis.beatgrid || duration <= 0) return null;
   const starts = barStarts(analysis.beatgrid, duration);
   const pct = (t: number) => `${(t / duration) * 100}%`;
 
+  const strip = (curve: number[], bottom: string, color: string, label: string) =>
+    curve.map((value, bar) =>
+      starts[bar] === undefined ? null : (
+        <div
+          key={`${label}${bar}`}
+          className={`absolute h-1 ${bottom} ${color}`}
+          style={{
+            left: pct(starts[bar]),
+            width: pct(barTime(starts, bar + 1, duration) - starts[bar]),
+            opacity: 0.08 + 0.92 * value ** 2,
+          }}
+          title={`Bar ${bar + 1} · ${label} ${Math.round(value * 100)}%`}
+        />
+      ),
+    );
+
   return (
     <>
+      {analysis.sections.map((section) => {
+        const start = barTime(starts, section.start_bar, duration);
+        const style = SECTION_STYLE[section.type];
+        return (
+          <div
+            key={`${section.type}${section.start_bar}`}
+            className={`absolute top-0 flex h-4 items-center overflow-hidden border-l border-background/60 px-1 text-[9px] font-semibold tracking-wider uppercase ${style.className}`}
+            style={{ left: pct(start), width: pct(barTime(starts, section.end_bar, duration) - start) }}
+            title={`${style.label} · bars ${section.start_bar + 1}-${section.end_bar}`}
+          >
+            {style.label}
+          </div>
+        );
+      })}
       {starts.map((start, bar) => {
         const phrase = bar % PHRASE_BARS === 0;
         return (
-          <div key={bar} className="absolute top-0 bottom-2" style={{ left: pct(start) }}>
+          <div key={bar} className="absolute top-4 bottom-3" style={{ left: pct(start) }}>
             <div className={phrase ? "h-full w-px bg-primary/70" : "h-full w-px bg-foreground/10"} />
             {phrase && <span className="absolute top-0 left-1 font-mono text-[9px] leading-none text-primary">{bar + 1}</span>}
           </div>
         );
       })}
-      {analysis.energy_curve.map((energy, bar) =>
-        starts[bar] === undefined ? null : (
-          <div
-            key={`e${bar}`}
-            className="absolute bottom-0 h-1.5 bg-primary"
-            style={{
-              left: pct(starts[bar]),
-              width: pct((starts[bar + 1] ?? duration) - starts[bar]),
-              opacity: 0.1 + 0.9 * energy ** 2,
-            }}
-            title={`Bar ${bar + 1} · energy ${Math.round(energy * 100)}%`}
-          />
-        ),
-      )}
+      {strip(analysis.vocal_curve, "bottom-1.5", "bg-cyan-400", "voice")}
+      {strip(analysis.energy_curve, "bottom-0", "bg-primary", "energy")}
     </>
   );
 }

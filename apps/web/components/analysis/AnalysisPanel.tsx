@@ -8,7 +8,7 @@ import { KeyBadge } from "@/components/library/KeyBadge";
 import { Button } from "@/components/ui/button";
 import { ErrorNotice } from "@/components/ui/error-notice";
 import { api } from "@/lib/api";
-import { TRUSTED_DOWNBEAT, TRUSTED_GRID, firstDownbeat } from "@/lib/beatgrid";
+import { SECTION_STYLE, TRUSTED_DOWNBEAT, TRUSTED_GRID, barStarts, barTime, firstDownbeat } from "@/lib/beatgrid";
 import { formatBpm, formatTime } from "@/lib/format";
 import { applyTrackUpdate } from "@/lib/mutations";
 import { usePlayer } from "@/lib/player";
@@ -70,6 +70,8 @@ export function AnalysisPanel({ track, analysis }: { track: Track; analysis: Tra
   const bpmDiffers = track.bpm != null && Math.abs(track.bpm - grid.bpm) >= 0.05;
   const keyDiffers = !!analysis?.camelot_key && track.camelot_key !== analysis.camelot_key;
   const downbeat = firstDownbeat(grid);
+  const duration = (track.duration_ms ?? 0) / 1000;
+  const starts = barStarts(grid, duration);
 
   return (
     <section className="rounded-lg border border-border px-4 py-2">
@@ -150,6 +152,37 @@ export function AnalysisPanel({ track, analysis }: { track: Track; analysis: Tra
             <Button size="xs" variant="ghost" onClick={() => analyse.mutate(true)} disabled={busy} title="Discard your correction and use the analysis again">
               Reset
             </Button>
+          )}
+        </Row>
+        <Row label="Structure">
+          {analysis?.sections.length ? (
+            analysis.sections.map((section) => {
+              const style = SECTION_STYLE[section.type];
+              return (
+                <button
+                  key={`${section.type}${section.start_bar}`}
+                  type="button"
+                  onClick={() => usePlayer.getState().play(track, barTime(starts, section.start_bar, duration))}
+                  className={cn("rounded px-1.5 py-0.5 text-[11px] hover:ring-1 hover:ring-foreground/40", style.className)}
+                  title={`Play from bar ${section.start_bar + 1} (${formatTime(barTime(starts, section.start_bar, duration))})`}
+                >
+                  {style.label} <span className="font-mono opacity-70">{section.start_bar + 1}</span>
+                </button>
+              );
+            })
+          ) : (
+            <span className="text-xs text-muted-foreground">no clear sections (too short or no kick pattern)</span>
+          )}
+        </Row>
+
+        <Row label="Vocals">
+          {analysis?.vocal_probability != null ? (
+            <span className="text-xs">
+              voice on <span className="font-mono tabular-nums">{Math.round(analysis.vocal_probability * 100)}%</span> of the track
+              <span className="text-muted-foreground"> · cyan strip on the waveform</span>
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">re-analyse to detect vocals</span>
           )}
         </Row>
       </dl>
