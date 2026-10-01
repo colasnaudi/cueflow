@@ -29,7 +29,7 @@ review and cleanup tools:
 | Key- and BPM-compatible track matching | Available |
 | Genre suggestions and review queue | Available |
 | Duplicate and short-track cleanup | Available |
-| BPM, beatgrid, structure and cue analysis | Planned for MVP 0.2 |
+| BPM, beatgrid, bar 1, key, energy, structure and vocals from audio | Available (MVP 0.2) |
 | Ollama classification, embeddings and cue suggestions | Planned for MVP 0.3 |
 | Cue editor and Rekordbox XML import/export | Planned for MVP 0.4 |
 | Playlists and AI set builder | Planned |
@@ -104,6 +104,29 @@ shortcuts are:
 The “Match playing” filter finds tracks whose keys are compatible with the
 track currently loaded in the player (same key, relative key or adjacent
 Camelot key) and whose BPM is within ±3%.
+
+### Audio analysis
+
+“Analyse audio” (sidebar) or “Analyse now / Re-analyse” (track page) runs a
+deterministic analysis of the audio; nothing is written to the files:
+
+- **BPM and beatgrid** — one constant grid fitted to the whole track and snapped
+  to integer tempos, then slid onto the kick attacks.
+- **Bar 1** — the `beat_this` downbeat model, then moved onto the drops when
+  they agree on another beat of the bar. It can be moved by one beat by hand;
+  a corrected grid is never overwritten.
+- **Key** (Essentia `bgate` profile), **energy** per bar and **vocals** per bar.
+- **Structure** — INTRO, GROOVE, BREAK, BUILD, DROP, OUTRO from per-bar kick,
+  bass, mid and high levels. A DROP needs kick **and** bass at full level for
+  at least 8 bars, so fake drops, kick rolls and filter openings stay in the
+  BUILD. Drops are placed to the beat where kick and bass come back, without
+  snapping to 4-bar phrases. Regression fixtures measured on ten real tracks
+  live in `apps/api/tests/fixtures/structure`.
+
+BPM and key are only written to the catalogue when the file tags have none; a
+differing tag is shown on the track page and replaced only on request.
+Analysis takes about 7-12 s per track (`ANALYSIS_WORKERS` processes in
+parallel).
 
 ### Genre Review
 
@@ -263,9 +286,16 @@ The FastAPI service currently exposes:
 - `PATCH /tracks/{id}` — update catalogue rating and metadata fields;
 - `GET /tracks/{id}/audio` — stream a track;
 - `GET /tracks/{id}/peaks` — retrieve waveform peaks;
-- `POST/DELETE /tracks/{id}/tags` — manage tags;
+- `POST /tracks/{id}/tags` and `DELETE /tracks/{id}/tags/{tag_id}` — manage
+  tags;
+- `GET/POST /tracks/{id}/analysis`, `POST /tracks/{id}/analysis/apply` and
+  `POST /tracks/{id}/beatgrid/shift` — read or run a track's audio analysis,
+  use its BPM/key, move bar 1;
+- `GET/POST /analysis/audio` and `POST /analysis/audio/stop` — library-wide
+  audio analysis;
 - `POST/GET /library/scan` — start a scan and read its status;
-- `GET /library/folders` and `GET /facets` — folder tree and filter facets;
+- `GET /library/folders` and `GET /library/facets` — folder tree and filter
+  facets;
 - `GET /review/genres` and `POST /review/genres/{id}` — review genre
   suggestions;
 - `POST /analysis/genres`, `GET /analysis/genres` and
@@ -288,8 +318,9 @@ normalisation, folders, genre suggestions and cleanup safety rules.
 
 ## Known limitations and roadmap
 
-- BPM, beat positions, beatgrid and musical structure are not yet calculated
-  from audio; Cueflow currently uses BPM/key values already present in tags.
+- Structure detection is rule-based and tuned on house arrangements; bar 1 is
+  right for ~70 % of tracks from the model alone (83 % when it is confident)
+  and is corrected from the drops when they agree.
 - Hot cues, memory cues, structure markers and waveform cue editing are not
   implemented yet.
 - Ollama integration, embeddings, semantic search and AI cue suggestions are
