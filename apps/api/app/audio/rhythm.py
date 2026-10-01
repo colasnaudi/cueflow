@@ -14,7 +14,7 @@ import numpy as np
 from app.audio.structure import detect_sections, downbeat_shift
 from app.audio.vocals import per_bar, vocal_model
 
-ANALYZER_VERSION = "cueflow-dsp-v4"  # v4: drops placed to the beat, no phrase snapping
+ANALYZER_VERSION = "cueflow-dsp-v5"  # v5: grid phase on kicks, never on the offbeat
 BEAT_MODEL = "final0"
 SAMPLE_RATE = 44100
 BEATS_PER_BAR = 4
@@ -25,6 +25,7 @@ KEY_PROFILE = (
 MIN_TRUSTED_ALIGNMENT = 0.8
 SNAP_TOLERANCE_BPM = 0.03
 ENERGY_RANGE_DB = 30
+OFFBEAT_MARGIN = 1.15  # the offbeat grid must hit clearly stronger kicks to win
 # Bar 1 moved so that drops start bars: kick + bass coming back is a far clearer downbeat cue than the model.
 DROP_ALIGNED_CONFIDENCE = 0.9
 
@@ -82,13 +83,35 @@ def onset_envelope(audio: np.ndarray, hop: int = 256) -> tuple[np.ndarray, np.nd
 
 
 def refine_phase(onsets: tuple[np.ndarray, np.ndarray], bpm: float, first_beat: float) -> float:
-    """Beat-tracker ticks land ~20 ms early: slide the grid (±40 ms) onto the onset envelope attacks."""
+    """Beat-tracker ticks land ~20 ms early: slide the grid (±40 ms) onto the attacks of `onsets`."""
     times, env = onsets
     period = 60 / bpm
     grid = np.arange(first_beat % period, times[-1], period)
     shifts = np.arange(-0.04, 0.0405, 0.001)
     scores = [np.interp(grid + shift, times, env).sum() for shift in shifts]
     return float((first_beat + shifts[int(np.argmax(scores))]) % period)
+
+
+def kick_envelope(audio: np.ndarray, hop: int = 128) -> tuple[np.ndarray, np.ndarray]:
+    """Onset strength of the low band (< 150 Hz): where the kicks hit. Hats, claps and offbeat basses barely
+    register, so this tells a grid on the beat from one on the offbeat."""
+    import essentia.standard as es
+
+    window, spectrum = es.Windowing(type="hann"), es.Spectrum()
+    low = np.fft.rfftfreq(1024, 1 / SAMPLE_RATE) < 150
+    frames = es.FrameGenerator(audio, frameSize=1024, hopSize=hop, startFromZero=True)
+    energy = np.array([spectrum(window(f))[low].sum() for f in frames], dtype=np.float64)
+    flux = np.maximum(np.diff(np.log1p(energy * 100), prepend=0.0), 0.0)
+    return (np.arange(len(flux)) * hop + 512) / SAMPLE_RATE, flux + 1e-9
+
+
+def kick_score(kicks: tuple[np.ndarray, np.ndarray], first_beat: float, period: float) -> float:
+    """Mean strongest kick attack within ±30 ms of each grid beat."""
+    times, flux = kicks
+    grid = np.arange(first_beat % period, times[-1], period)
+    index = np.searchsorted(times, grid)
+    radius = max(1, int(0.03 / (times[1] - times[0])))
+    return float(np.mean([flux[max(0, i - radius) : i + radius + 1].max() for i in index]))
 
 
 def fit_grid(audio: np.ndarray) -> tuple[float, float, float]:
@@ -120,7 +143,16 @@ def fit_grid(audio: np.ndarray) -> tuple[float, float, float]:
     if abs(bpm - rounded) <= SNAP_TOLERANCE_BPM and score(rounded) >= 0.98 * score(bpm):
         bpm = rounded
     period = 60 / bpm
-    first_beat = refine_phase(onsets, bpm, grid_phase(ticks, ones, period))
+    phase = grid_phase(ticks, ones, period)
+    # Beat trackers can lock onto the offbeat (open hats are loud in house): keep the phase whose beats land
+    # on kicks. Measured against Rekordbox grids, this was a quarter of the WAV library.
+    kicks = kick_envelope(audio)
+    offbeat = (phase + period / 2) % period
+    if kick_score(kicks, offbeat, period) > OFFBEAT_MARGIN * kick_score(kicks, phase, period):
+        phase = offbeat
+    # Kicks decide beat vs offbeat; the full-band onsets place it to the millisecond (the low band's
+    # attack smears over the analysis window and lands ~6 ms early).
+    first_beat = refine_phase(onsets, bpm, phase)
     return bpm, first_beat, alignment(ticks, ones, period)
 
 
