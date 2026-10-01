@@ -133,7 +133,17 @@ a memory cue on every section start. They are approved automatically
 ready to export; fix them later in Rekordbox. On the track page you can listen,
 remove a cue, or “Lock cues” so that a later re-analysis keeps them as they are.
 
-“Rekordbox export” builds a `rekordbox.xml` (a copy is kept in `data/exports/`)
+After every audio analysis Cueflow also rewrites one **live XML**
+(`data/rekordbox/cueflow.xml`, or `REKORDBOX_XML_PATH`) with every analysed
+track, its cues and playlists mirroring your folders. Point Rekordbox to it once
+(Preferences → Advanced → Database → rekordbox xml → Imported Library); then,
+whenever you want, open rekordbox xml → Cueflow → a folder, select the tracks
+and “Import To Collection”. No download needed.
+
+Right-click a folder in the sidebar to analyse its audio and cues, re-analyse
+it, suggest genres, rescan it, download its XML or show it in the Finder.
+
+“Rekordbox export” also builds a `rekordbox.xml` (a copy is kept in `data/exports/`)
 for a folder, with approved cues by default and optionally the beatgrid. In
 Rekordbox: set the file under Preferences → Advanced → Database → rekordbox
 xml, show “rekordbox xml” in the tree, open the Cueflow playlist, select the

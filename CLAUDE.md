@@ -61,6 +61,9 @@ The current runtime implements the library-management MVP plus genre review and 
 * Tag vs analysis comparison with explicit "use analysed value"
 * Hot cue / memory cue generation from the sections (A START, B GROOVE, C BREAK, D DROP, E VOCAL, F DROP 2, G OUTRO), approved automatically by default
 * Rekordbox XML export (cues, memory cues, beatgrid) — imported by the user with "Import To Collection"
+* Live Rekordbox XML at a fixed path (`REKORDBOX_XML_PATH`, default `data/rekordbox/cueflow.xml`), rewritten
+  after every audio analysis, playlists mirroring the folders — Rekordbox is pointed at it once
+* Folder right-click menu: analyse audio & cues, re-analyse, analyse genres, rescan, download XML, show in Finder
 * Duplicate detection
 * Probable duplicate detection
 * Short-track cleanup
@@ -467,7 +470,14 @@ DELETE /tracks/{id}/cues/{cue_id}
 
 GET    /export/rekordbox/preview
 POST   /export/rekordbox
+GET    /export/rekordbox/live
+POST   /export/rekordbox/live
+
+POST   /library/reveal
 ```
+
+`POST /analysis/audio` and `POST /analysis/genres` accept `folder` (and `force` for audio): the folder
+right-click menu runs them on one folder and its subfolders.
 
 When adding an endpoint:
 
