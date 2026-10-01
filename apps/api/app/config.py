@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     # Shift (ms) applied to MP3 cue/grid positions in the Rekordbox export: decoders disagree by about one MP3
     # frame (26 ms) depending on the LAME header. Measure it on your library before changing it.
     rekordbox_mp3_offset_ms: float = 0.0
+    # The DJ's choice: generated cues are approved right away (edited later in Rekordbox if needed).
+    auto_approve_cues: bool = True
 
     ollama_url: str = "http://localhost:11434"
     ollama_llm_model: str = "gemma4:12b-it-qat"

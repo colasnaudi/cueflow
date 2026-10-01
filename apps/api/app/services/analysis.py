@@ -5,6 +5,7 @@ replacing a tagged value is an explicit user action (`apply`). A user-corrected 
 """
 
 import logging
+import multiprocessing
 import threading
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -26,6 +27,7 @@ from app.services.jobs import JobStatus
 log = logging.getLogger(__name__)
 
 MIN_DURATION_MS = 60_000
+WORKER_RECYCLE_TASKS = 50
 
 status = JobStatus()
 _lock = threading.Lock()
@@ -155,13 +157,19 @@ def run(limit: int | None = None, workers: int | None = None) -> JobStatus:
             status.phase = "cues"
             for track in tracks_without_cues(session):
                 regenerate_cues(session, track)
+            cues.auto_approve_pending(session)
             session.commit()
 
             status.phase = "audio"
             tracks = eligible_tracks(session)[:limit]
             status.total = len(tracks)
             by_path = {t.path: t for t in tracks}
-            with ProcessPoolExecutor(max_workers=workers or get_settings().analysis_workers) as pool:
+            # Workers are recycled every 50 tracks so a library-wide run keeps a flat memory footprint.
+            with ProcessPoolExecutor(
+                max_workers=workers or get_settings().analysis_workers,
+                max_tasks_per_child=WORKER_RECYCLE_TASKS,
+                mp_context=multiprocessing.get_context("spawn"),
+            ) as pool:
                 futures = {pool.submit(_analyse_file, t.path): t.path for t in tracks}
                 for future in as_completed(futures):
                     track = by_path[futures[future]]

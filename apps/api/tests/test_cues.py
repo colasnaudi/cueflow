@@ -164,6 +164,10 @@ def fake_analysis(**overrides):
 
 
 def test_cue_workflow_and_export(client, library, monkeypatch, tmp_path):
+    """Manual review mode (AUTO_APPROVE_CUES=false)."""
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "auto_approve_cues", False)
     scan(library)
     track_id = client.get("/tracks", params={"q": "jetsetter"}).json()["items"][0]["id"]
     assert client.post(f"/tracks/{track_id}/cues/regenerate").status_code == 409
@@ -258,3 +262,54 @@ def test_tracks_without_cues_are_not_exported(client, library, monkeypatch):
     track_id = client.get("/tracks").json()["items"][0]["id"]
     client.post(f"/tracks/{track_id}/analysis")
     assert client.get("/export/rekordbox/preview", params={"approved_only": False}).json()["tracks"] == 0
+
+
+def test_auto_approved_cues_are_exportable_and_refreshed_by_reanalysis(client, library, monkeypatch):
+    """Default mode: analysed tracks are ready for Rekordbox; only DJ-validated cues survive re-analysis."""
+    scan(library)
+    track_id = client.get("/tracks", params={"q": "jetsetter"}).json()["items"][0]["id"]
+    monkeypatch.setattr(rhythm, "analyse", lambda path: fake_analysis())
+    client.post(f"/tracks/{track_id}/analysis")
+    cues = client.get(f"/tracks/{track_id}/cues").json()
+    assert cues and all(c["approved"] and c["approved_by"] == "AUTO" for c in cues)
+    assert client.get("/export/rekordbox/preview").json()["tracks"] == 1
+
+    # A better analysis replaces the automatic cues...
+    monkeypatch.setattr(
+        rhythm,
+        "analyse",
+        lambda path: fake_analysis(
+            sections=[
+                {"type": "GROOVE", "start_bar": 0, "end_bar": 40, "confidence": 0.9},
+                {"type": "DROP", "start_bar": 40, "end_bar": 64, "confidence": 0.8},
+            ]
+        ),
+    )
+    client.post(f"/tracks/{track_id}/analysis")
+    slots = {c["slot"]: c for c in client.get(f"/tracks/{track_id}/cues").json()}
+    assert slots["D"]["bar"] == 40 and "C" not in slots
+
+    # ...but not the ones the DJ validated.
+    client.post(f"/tracks/{track_id}/cues/approve")
+    monkeypatch.setattr(rhythm, "analyse", lambda path: fake_analysis())
+    client.post(f"/tracks/{track_id}/analysis")
+    slots = {c["slot"]: c for c in client.get(f"/tracks/{track_id}/cues").json()}
+    assert (slots["D"]["bar"], slots["D"]["approved_by"]) == (40, "USER")
+
+
+def test_job_approves_cues_generated_before_auto_approval(library, monkeypatch):
+    from sqlalchemy import select, update
+
+    from app.db import SessionLocal
+    from app.services import analysis
+
+    scan(library)
+    monkeypatch.setattr(rhythm, "analyse", lambda path: fake_analysis())
+    with SessionLocal() as session:
+        track = session.scalar(select(Track).where(Track.title == "Jetsetter"))
+        analysis.analyse_track(session, track)
+        session.execute(update(Cue).values(approved=False, approved_by=None))
+        session.commit()
+        monkeypatch.setattr(analysis, "eligible_tracks", lambda session: [])
+        analysis.run(workers=1)
+        assert all(c.approved and c.approved_by == "AUTO" for c in session.scalars(select(Cue)))

@@ -40,4 +40,6 @@ class Cue(Base):
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
     source: Mapped[str] = mapped_column(Text)
     approved: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # AUTO: approved on generation, replaced by a re-analysis. USER: validated by the DJ, never replaced.
+    approved_by: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

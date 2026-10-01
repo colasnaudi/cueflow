@@ -249,6 +249,7 @@ class CueOut(BaseModel):
     confidence: float | None
     source: str
     approved: bool
+    approved_by: str | None
 
 
 class RekordboxExport(BaseModel):
