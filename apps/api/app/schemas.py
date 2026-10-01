@@ -234,3 +234,31 @@ class ApplyAnalysis(BaseModel):
 
 class ShiftDownbeat(BaseModel):
     beats: int = Field(ge=-3, le=3)
+
+
+class CueOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    slot: str
+    type: str
+    label: str | None
+    bar: int
+    beat: int
+    color: str | None
+    confidence: float | None
+    source: str
+    approved: bool
+
+
+class RekordboxExport(BaseModel):
+    folder: str | None = None
+    approved_only: bool = True
+    include_beatgrid: bool = True
+
+
+class ExportPreview(BaseModel):
+    tracks: int
+    hot_cues: int
+    memory_cues: int
+    unapproved_tracks: int

@@ -9,6 +9,7 @@ import threading
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
+from types import SimpleNamespace
 
 from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
@@ -16,7 +17,9 @@ from sqlalchemy.orm import Session
 from app.audio import rhythm
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import AudioAnalysis, Beatgrid, Section, Track
+from app.models import AudioAnalysis, Beatgrid, Cue, Section, Track
+from app.services import cues
+from app.services.cue_engine import plan_cues
 from app.services.folders import is_sample_folder
 from app.services.jobs import JobStatus
 
@@ -71,6 +74,10 @@ def save(session: Session, track: Track, result: dict, reset_grid: bool = False)
         session.execute(delete(Section).where(Section.track_id == copy.id, Section.source == "AUDIO"))
         for section in result["sections"]:
             session.add(Section(track_id=copy.id, analyzer_version=rhythm.ANALYZER_VERSION, **section))
+        detected = [
+            SimpleNamespace(**{"start_beat": 0, "end_beat": 0, **section}) for section in result["sections"]
+        ]
+        cues.replace_suggestions(session, copy.id, plan_cues(detected, result["vocal_curve"]))
 
         # Fill the catalogue only where the file had nothing.
         if copy.bpm is None:
@@ -144,6 +151,13 @@ def run(limit: int | None = None, workers: int | None = None) -> JobStatus:
 
     try:
         with SessionLocal() as session:
+            # Tracks analysed before cues existed get them from their stored sections (no audio needed).
+            status.phase = "cues"
+            for track in tracks_without_cues(session):
+                regenerate_cues(session, track)
+            session.commit()
+
+            status.phase = "audio"
             tracks = eligible_tracks(session)[:limit]
             status.total = len(tracks)
             by_path = {t.path: t for t in tracks}
@@ -196,3 +210,17 @@ def sections_of(session: Session, track_id) -> list[Section]:
     return list(
         session.scalars(select(Section).where(Section.track_id == track_id).order_by(Section.start_bar))
     )
+
+
+def regenerate_cues(session: Session, track: Track) -> None:
+    """Re-plan the suggested cues from the stored sections (approved and user cues are kept)."""
+    dsp = dsp_analysis(session, track.id)
+    planned = plan_cues(sections_of(session, track.id), (dsp.vocal_curve or []) if dsp else [])
+    for copy in copies_of(session, track):
+        cues.replace_suggestions(session, copy.id, planned)
+
+
+def tracks_without_cues(session: Session) -> list[Track]:
+    has_cues = select(Cue.track_id)
+    analysed = select(AudioAnalysis.track_id).where(AudioAnalysis.analyzer_version == rhythm.ANALYZER_VERSION)
+    return list(session.scalars(select(Track).where(Track.id.in_(analysed), Track.id.not_in(has_cues))))

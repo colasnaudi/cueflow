@@ -12,3 +12,4 @@ data/analysis/*
 !data/**/.gitkeep
 .DS_Store
 data/models/*
+data/exports/*
