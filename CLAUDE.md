@@ -53,6 +53,8 @@ The current runtime implements the library-management MVP plus genre review and 
 * Downbeat detection (beat_this model, user-correctable "bar 1")
 * Musical key detection (Essentia `bgate` profile)
 * Per-bar energy curve
+* Musical structure: INTRO / GROOVE / BREAK / BUILD / DROP / OUTRO from a kick-driven rule engine (stored in bars)
+* Vocal activity per bar (Essentia voice/instrumental)
 * Tag vs analysis comparison with explicit "use analysed value"
 * Duplicate detection
 * Probable duplicate detection
@@ -63,7 +65,6 @@ The current runtime implements the library-management MVP plus genre review and 
 
 These are roadmap items, not current runtime capabilities:
 
-* Musical structure analysis
 * Hot Cues
 * Memory Cues
 * Cue editor
@@ -72,7 +73,6 @@ These are roadmap items, not current runtime capabilities:
 * Ollama embeddings
 * Semantic search
 * AI cue suggestions
-* Vocal detection
 * Energy curves
 * Smart Crates
 * Dynamic playlists
