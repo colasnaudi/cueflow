@@ -56,6 +56,8 @@ The current runtime implements the library-management MVP plus genre review and 
 * Musical structure: INTRO / GROOVE / BREAK / BUILD / DROP / OUTRO from a kick-driven rule engine (stored in bars)
 * Vocal activity per bar (Essentia voice/instrumental)
 * Tag vs analysis comparison with explicit "use analysed value"
+* Hot cue / memory cue suggestions from the sections (A START, B GROOVE, C BREAK, D DROP, E VOCAL, F DROP 2, G OUTRO), approved per track
+* Rekordbox XML export (cues, memory cues, beatgrid) — imported by the user with "Import To Collection"
 * Duplicate detection
 * Probable duplicate detection
 * Short-track cleanup
@@ -65,10 +67,8 @@ The current runtime implements the library-management MVP plus genre review and 
 
 These are roadmap items, not current runtime capabilities:
 
-* Hot Cues
-* Memory Cues
-* Cue editor
-* Rekordbox XML import/export
+* Cue editor (moving a cue on the waveform)
+* Rekordbox XML import
 * Ollama classification
 * Ollama embeddings
 * Semantic search
@@ -456,6 +456,14 @@ POST   /tracks/{id}/beatgrid/shift
 GET    /analysis/audio
 POST   /analysis/audio
 POST   /analysis/audio/stop
+
+GET    /tracks/{id}/cues
+POST   /tracks/{id}/cues/approve
+POST   /tracks/{id}/cues/regenerate
+DELETE /tracks/{id}/cues/{cue_id}
+
+GET    /export/rekordbox/preview
+POST   /export/rekordbox
 ```
 
 When adding an endpoint:

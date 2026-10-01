@@ -31,7 +31,8 @@ review and cleanup tools:
 | Duplicate and short-track cleanup | Available |
 | BPM, beatgrid, bar 1, key, energy, structure and vocals from audio | Available (MVP 0.2) |
 | Ollama classification, embeddings and cue suggestions | Planned for MVP 0.3 |
-| Cue editor and Rekordbox XML import/export | Planned for MVP 0.4 |
+| Hot/memory cue suggestions and Rekordbox XML export | Available |
+| Cue editor and Rekordbox XML import | Planned for MVP 0.4 |
 | Playlists and AI set builder | Planned |
 
 ## Features
@@ -122,6 +123,23 @@ deterministic analysis of the audio; nothing is written to the files:
   BUILD. Drops are placed to the beat where kick and bass come back, without
   snapping to 4-bar phrases. Regression fixtures measured on ten real tracks
   live in `apps/api/tests/fixtures/structure`.
+
+### Cues and Rekordbox export
+
+After analysis each track gets suggested hot cues — A START, B GROOVE, C BREAK,
+D DROP, E VOCAL, F DROP 2, G OUTRO — placed to the beat from its sections, plus
+a memory cue on every section start. On the track page you listen, remove what
+you do not want and approve; re-analysis never touches approved cues.
+
+“Rekordbox export” builds a `rekordbox.xml` (a copy is kept in `data/exports/`)
+for a folder, with approved cues by default and optionally the beatgrid. In
+Rekordbox: set the file under Preferences → Advanced → Database → rekordbox
+xml, show “rekordbox xml” in the tree, open the Cueflow playlist, select the
+**tracks** and choose “Import To Collection”. Back up the Rekordbox library
+first: the import overwrites the cues (and grids) of those tracks. Cueflow never
+touches the Rekordbox database. `REKORDBOX_MP3_OFFSET_MS` shifts MP3 positions
+if your Rekordbox decodes MP3s with another start offset (about one MP3 frame,
+26 ms, for some files).
 
 BPM and key are only written to the catalogue when the file tags have none; a
 differing tag is shown on the track page and replaced only on request.
@@ -293,6 +311,11 @@ The FastAPI service currently exposes:
   use its BPM/key, move bar 1;
 - `GET/POST /analysis/audio` and `POST /analysis/audio/stop` — library-wide
   audio analysis;
+- `GET /tracks/{id}/cues`, `POST /tracks/{id}/cues/approve`,
+  `POST /tracks/{id}/cues/regenerate` and `DELETE /tracks/{id}/cues/{cue_id}` —
+  review the suggested cues;
+- `GET /export/rekordbox/preview` and `POST /export/rekordbox` — build the
+  Rekordbox XML;
 - `POST/GET /library/scan` — start a scan and read its status;
 - `GET /library/folders` and `GET /library/facets` — folder tree and filter
   facets;
@@ -321,12 +344,12 @@ normalisation, folders, genre suggestions and cleanup safety rules.
 - Structure detection is rule-based and tuned on house arrangements; bar 1 is
   right for ~70 % of tracks from the model alone (83 % when it is confident)
   and is corrected from the drops when they agree.
-- Hot cues, memory cues, structure markers and waveform cue editing are not
-  implemented yet.
+- Cues cannot be dragged on the waveform yet (remove + approve only); Rekordbox
+  XML import is not implemented.
 - Ollama integration, embeddings, semantic search and AI cue suggestions are
   planned but not part of the current runtime.
-- Rekordbox XML import/export is planned; there is currently no direct
-  Rekordbox synchronisation.
+- There is no direct Rekordbox synchronisation, by design: the XML export is
+  imported by the user.
 - Playlists and the AI set builder are planned.
 - The Discogs taxonomy does not cover every DJ label, including some Afro House
   and Melodic Techno workflows; folder-based suggestions remain useful there.
