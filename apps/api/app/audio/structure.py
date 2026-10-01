@@ -34,6 +34,7 @@ INTRO_MAX_BARS = 32
 INTRO_RISE_DB = 2.5
 OUTRO_FALL_DB = 3.0
 MIN_SECTION_BARS = 4
+BEATS_PER_BAR = 4
 
 
 @dataclass
@@ -42,19 +43,11 @@ class Section:
     start_bar: int  # 0-based, inclusive
     end_bar: int  # exclusive
     confidence: float
+    start_beat: int = 0  # beat inside start_bar (0-3): drops are placed to the beat
+    end_beat: int = 0
 
     def as_dict(self) -> dict:
         return asdict(self)
-
-
-def _phrase_steps(first: int, last: int) -> range:
-    """Bar indices on the 4-bar grid (counted from bar 1) between first and last, inclusive."""
-    return range(-(-first // 4) * 4, last + 1, 4)
-
-
-def _snap4(bar: int) -> int:
-    """Nearest 4-bar boundary, halves rounded up (Python's round() would send 66 to 64)."""
-    return int(np.floor(bar / 4 + 0.5)) * 4
 
 
 def _runs(flags: np.ndarray) -> list[tuple[bool, int, int]]:
@@ -105,7 +98,8 @@ def _ramp_start(drive: np.ndarray, start: int, end: int) -> int | None:
     """Where a flat passage turns into a climb: the split of drive[start:end] into "flat, then linear ramp"
     with the least squared error, if the ramp sits >= 3 dB above the flat part."""
     best, best_error = None, np.inf
-    for split in _phrase_steps(start + MIN_BREAK_BARS, end - MIN_SECTION_BARS):
+    # Every bar is a candidate: arrangements do not always follow 4-bar phrases.
+    for split in range(start + MIN_BREAK_BARS, end - MIN_SECTION_BARS + 1):
         flat, ramp = drive[start:split], drive[split:end]
         x = np.arange(len(ramp))
         slope, intercept = np.polyfit(x, ramp, 1)
@@ -130,9 +124,10 @@ def _merge_variations(bodies: list[tuple[int, int]], kickless: np.ndarray) -> li
 
 
 def _last_change(drive: np.ndarray, start: int, end: int) -> int | None:
-    """Biggest 4-bar level change (up: a riser kicks in; down: the pre-drop cut) in the last 16 bars."""
+    """Biggest level change between the 4 bars before and after a bar (up: a riser kicks in; down: the
+    pre-drop cut) in the last 16 bars."""
     best, best_jump = None, BUILD_CHANGE_DB
-    for split in _phrase_steps(max(start + MIN_BREAK_BARS, end - 16), end - MIN_SECTION_BARS):
+    for split in range(max(start + MIN_BREAK_BARS, end - 16), end - MIN_SECTION_BARS + 1):
         if split - 4 < start:
             continue
         jump = abs(drive[split : split + 4].mean() - drive[split - 4 : split].mean())
@@ -188,7 +183,11 @@ def _outro_start(midhi: np.ndarray, start: int, end: int) -> int | None:
     return None
 
 
-def detect_sections(features: np.ndarray) -> list[Section]:
+def detect_sections(
+    features: np.ndarray, beat_features: np.ndarray | None = None, first_bar_beat: int = 0
+) -> list[Section]:
+    """Sections from per-bar features; with per-beat features (beat k of the grid; bar 0 starts at beat
+    `first_bar_beat`), drops are then placed on the exact beat where kick and bass come back."""
     n = len(features)
     if n < 16:
         return []
@@ -198,7 +197,7 @@ def detect_sections(features: np.ndarray) -> list[Section]:
     kickless = kick < KICKLESS_DB
     midhi = (mid + high) / 2
     # What a DJ hears climbing in a build: risers (highs), synths (mids) and the kick coming back.
-    drive = np.convolve((kick + mid + high) / 3, np.ones(2) / 2, mode="same")
+    drive = (kick + mid + high) / 3
 
     bodies = _merge_variations(_merge_fills(_bodies(full)), kickless)
     if not bodies:
@@ -228,6 +227,13 @@ def detect_sections(features: np.ndarray) -> list[Section]:
 
         if index + 1 < len(bodies):
             gap_end = bodies[index + 1][0]
+            # A break's start is ambiguous by a bar or two (a fill cuts the bass, the kick fades): between the
+            # groove's end and the kickless core, prefer a 4-bar phrase boundary. Drops are never snapped:
+            # they sit where kick and bass come back.
+            core = _kickless_core(kickless, end, gap_end)
+            if core and 0 < core[0] - end <= MAX_FILL_GAP:
+                on_phrase = [bar for bar in range(end, core[0] + 1) if bar % 4 == 0]
+                sections[-1].end_bar = end = on_phrase[0] if on_phrase else end
             build = _build_start(drive, kickless, full, end, gap_end)
             depth = float(np.clip(-kick[end:build].mean() / 20, 0, 1)) if build > end else 0.0
             sections.append(Section("BREAK", end, build, round(0.5 + 0.5 * depth, 2)))
@@ -240,25 +246,78 @@ def detect_sections(features: np.ndarray) -> list[Section]:
     last_end = bodies[-1][1]
     if last_end < n:
         sections.append(Section("OUTRO", last_end, n, 0.7))
-    return _tidy(sections, n)
+    sections = _tidy(sections, n)
+    if beat_features is not None and len(beat_features):
+        _place_drops_on_beats(sections, beat_features, first_bar_beat)
+    return sections
+
+
+def _place_drops_on_beats(sections: list[Section], beat_features: np.ndarray, first_bar_beat: int) -> None:
+    """Move each DROP start to the first beat, within one bar of the bar-level estimate, from which kick and
+    bass stay full for 2 bars. Catches drops off the expected bar or beat (pickups, a misplaced bar 1).
+
+    Each beat is compared with the same beat position in the drop's first bars: a rhythmic bassline is
+    weaker on some beats of every bar, and that must not read as "not full yet".
+    """
+    window = 2 * BEATS_PER_BAR
+    for i, section in enumerate(sections):
+        if section.type != "DROP" or i == 0:
+            continue
+        estimate = first_bar_beat + BEATS_PER_BAR * section.start_bar + section.start_beat
+        reference = beat_features[estimate + BEATS_PER_BAR : estimate + 5 * BEATS_PER_BAR]
+        if len(reference) < BEATS_PER_BAR:
+            continue
+        positions = (
+            np.arange(estimate + BEATS_PER_BAR, estimate + BEATS_PER_BAR + len(reference)) % BEATS_PER_BAR
+        )
+        level = {p: np.median(reference[positions == p], axis=0) for p in range(BEATS_PER_BAR)}
+
+        def is_full(beat: int, level: dict = level) -> bool:
+            kick, bass = beat_features[beat, :2] - level[beat % BEATS_PER_BAR][:2]
+            return kick >= FULL_KICK_DB and bass >= FULL_BASS_DB
+
+        previous = sections[i - 1]
+        previous_start = first_bar_beat + BEATS_PER_BAR * previous.start_bar + previous.start_beat
+        for beat in range(max(previous_start + 1, estimate - BEATS_PER_BAR), estimate + BEATS_PER_BAR + 1):
+            if beat + window > len(beat_features) or not is_full(beat):
+                continue  # the drop beat itself must be full
+            if np.mean([is_full(b) for b in range(beat, beat + window)]) >= 7 / 8:
+                bar, offset = divmod(beat - first_bar_beat, BEATS_PER_BAR)
+                section.start_bar, section.start_beat = bar, offset
+                previous.end_bar, previous.end_beat = bar, offset
+                break
+
+
+def downbeat_shift(sections: list[Section]) -> int:
+    """Beats to move bar 1 by so that drops start bars, or 0.
+
+    Drops land on a downbeat. When the beat-placed drops of a track agree on another beat of the bar (most of
+    them, at least one), the downbeat model picked the wrong beat as bar 1.
+    """
+    offsets = [s.start_beat for s in sections if s.type == "DROP"]
+    if not offsets:
+        return 0
+    values, counts = np.unique(offsets, return_counts=True)
+    best = int(values[np.argmax(counts)])
+    return best if best and counts.max() * 2 > len(offsets) else 0
 
 
 def _tidy(sections: list[Section], n: int) -> list[Section]:
-    """Snap boundaries to 4-bar steps, let a neighbour absorb sections shorter than 4 bars, join neighbours
-    of the same type and make the sections tile [0, n)."""
-    snapped: list[Section] = []
+    """Let a neighbour absorb sections shorter than 4 bars, join neighbours of the same type and make the
+    sections tile [0, n). Boundaries stay where the music changes: no snapping to 4-bar phrases."""
+    tidy: list[Section] = []
     for s in sections:
-        start = 0 if not snapped else snapped[-1].end_bar
-        end = n if s.end_bar >= n else _snap4(s.end_bar)
+        start = 0 if not tidy else tidy[-1].end_bar
+        end = min(n, s.end_bar)
         if end - start < MIN_SECTION_BARS and end < n:
             continue  # absorbed by the next section
-        if snapped and snapped[-1].type == s.type:
-            prev = snapped[-1]
-            snapped[-1] = Section(s.type, prev.start_bar, end, max(prev.confidence, s.confidence))
+        if tidy and tidy[-1].type == s.type:
+            prev = tidy[-1]
+            tidy[-1] = Section(s.type, prev.start_bar, end, max(prev.confidence, s.confidence))
         elif end > start:
-            snapped.append(Section(s.type, start, end, s.confidence))
-    if snapped and snapped[-1].end_bar - snapped[-1].start_bar < MIN_SECTION_BARS and len(snapped) > 1:
-        tail = snapped.pop()
-        prev = snapped.pop()
-        snapped.append(Section(prev.type, prev.start_bar, tail.end_bar, prev.confidence))
-    return snapped
+            tidy.append(Section(s.type, start, end, s.confidence))
+    if tidy and tidy[-1].end_bar - tidy[-1].start_bar < MIN_SECTION_BARS and len(tidy) > 1:
+        tail = tidy.pop()
+        prev = tidy.pop()
+        tidy.append(Section(prev.type, prev.start_bar, tail.end_bar, prev.confidence))
+    return tidy

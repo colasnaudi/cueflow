@@ -1,6 +1,6 @@
 import type { TrackAnalysis } from "@cueflow/types";
 
-import { SECTION_STYLE, barStarts, barTime } from "@/lib/beatgrid";
+import { SECTION_STYLE, barStarts, barTime, positionLabel, positionTime } from "@/lib/beatgrid";
 
 const PHRASE_BARS = 8;
 
@@ -29,14 +29,16 @@ export function BeatgridOverlay({ analysis, duration }: { analysis: TrackAnalysi
   return (
     <>
       {analysis.sections.map((section) => {
-        const start = barTime(starts, section.start_bar, duration);
+        const grid = analysis.beatgrid!;
+        const start = positionTime(grid, starts, section.start_bar, section.start_beat, duration);
+        const end = positionTime(grid, starts, section.end_bar, section.end_beat, duration);
         const style = SECTION_STYLE[section.type];
         return (
           <div
-            key={`${section.type}${section.start_bar}`}
+            key={`${section.type}${section.start_bar}.${section.start_beat}`}
             className={`absolute top-0 flex h-4 items-center overflow-hidden border-l border-background/60 px-1 text-[9px] font-semibold tracking-wider uppercase ${style.className}`}
-            style={{ left: pct(start), width: pct(barTime(starts, section.end_bar, duration) - start) }}
-            title={`${style.label} · bars ${section.start_bar + 1}-${section.end_bar}`}
+            style={{ left: pct(start), width: pct(end - start) }}
+            title={`${style.label} · from bar ${positionLabel(section.start_bar, section.start_beat)}`}
           >
             {style.label}
           </div>

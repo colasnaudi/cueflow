@@ -26,6 +26,17 @@ export function barTime(starts: number[], bar: number, duration: number): number
   return starts[bar] ?? duration;
 }
 
+/** Seconds of a musical position (bar + beat inside it). */
+export function positionTime(grid: Beatgrid, starts: number[], bar: number, beat: number, duration: number): number {
+  const start = starts[bar];
+  return start === undefined ? duration : Math.min(duration, start + beat * beatPeriod(grid));
+}
+
+/** "96" or "120.4" (bar, and beat when not on beat 1), as a DJ counts. */
+export function positionLabel(bar: number, beat: number): string {
+  return beat ? `${bar + 1}.${beat + 1}` : String(bar + 1);
+}
+
 export const SECTION_STYLE: Record<SectionType, { label: string; className: string }> = {
   INTRO: { label: "Intro", className: "bg-slate-400/25 text-slate-200" },
   GROOVE: { label: "Groove", className: "bg-sky-500/25 text-sky-200" },

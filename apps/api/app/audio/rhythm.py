@@ -11,10 +11,10 @@ from pathlib import Path
 
 import numpy as np
 
-from app.audio.structure import detect_sections
+from app.audio.structure import detect_sections, downbeat_shift
 from app.audio.vocals import per_bar, vocal_model
 
-ANALYZER_VERSION = "cueflow-dsp-v3"  # v3: sustained-drop structure engine
+ANALYZER_VERSION = "cueflow-dsp-v4"  # v4: drops placed to the beat, no phrase snapping
 BEAT_MODEL = "final0"
 SAMPLE_RATE = 44100
 BEATS_PER_BAR = 4
@@ -25,6 +25,8 @@ KEY_PROFILE = (
 MIN_TRUSTED_ALIGNMENT = 0.8
 SNAP_TOLERANCE_BPM = 0.03
 ENERGY_RANGE_DB = 30
+# Bar 1 moved so that drops start bars: kick + bass coming back is a far clearer downbeat cue than the model.
+DROP_ALIGNED_CONFIDENCE = 0.9
 
 
 @dataclass
@@ -183,9 +185,8 @@ def bar_energy(audio: np.ndarray, bar_starts: np.ndarray) -> list[float]:
     return np.round(np.clip((db - (db.max() - ENERGY_RANGE_DB)) / ENERGY_RANGE_DB, 0, 1), 3).tolist()
 
 
-def bar_features(audio: np.ndarray, bar_starts: np.ndarray) -> np.ndarray:
-    """Per bar, in dB: kick (95th percentile of < 120 Hz power: the hits), bass (30th percentile of < 120 Hz:
-    what remains between the hits), mid (150 Hz - 2 kHz) and high (> 4 kHz) — the structure engine's input.
+def band_frames(audio: np.ndarray) -> tuple[np.ndarray, ...]:
+    """Frame times and power of the low (< 120 Hz), mid (150 Hz - 2 kHz) and high (> 4 kHz) bands.
 
     Short frames (46 ms, 23 ms hop) separate a kick from the gap after it, so a kick alone and kick + bassline
     look different.
@@ -201,12 +202,19 @@ def bar_features(audio: np.ndarray, bar_starts: np.ndarray) -> np.ndarray:
     low = power[:, freqs < 120].sum(axis=1)
     mid = power[:, (freqs >= 150) & (freqs < 2000)].sum(axis=1)
     high = power[:, freqs >= 4000].sum(axis=1)
+    return times, low, mid, high
+
+
+def segment_features(bands: tuple[np.ndarray, ...], boundaries: np.ndarray) -> np.ndarray:
+    """Per segment (bar or beat), in dB: kick (95th percentile of the low band: the hits), bass (its 30th
+    percentile: what remains between the hits), mid and high (means) — the structure engine's input."""
+    times, low, mid, high = bands
     rows = []
-    for start, end in zip(bar_starts[:-1], bar_starts[1:], strict=True):
+    for start, end in zip(boundaries[:-1], boundaries[1:], strict=True):
         inside = (times >= start) & (times < end)
-        if not inside.any():
+        if not inside.any():  # segment shorter than a frame: nearest frame
             inside = np.zeros(len(times), dtype=bool)
-            inside[min(len(times) - 1, int(start * SAMPLE_RATE / hop))] = True
+            inside[int(np.argmin(np.abs(times - start)))] = True
         values = (
             np.percentile(low[inside], 95),
             np.percentile(low[inside], 30),
@@ -215,6 +223,10 @@ def bar_features(audio: np.ndarray, bar_starts: np.ndarray) -> np.ndarray:
         )
         rows.append([10 * np.log10(v + 1e-12) for v in values])
     return np.asarray(rows, dtype=np.float64).reshape(-1, 4)
+
+
+def bar_features(audio: np.ndarray, bar_starts: np.ndarray) -> np.ndarray:
+    return segment_features(band_frames(audio), bar_starts)
 
 
 def detect_key(audio: np.ndarray) -> tuple[str | None, str | None, float]:
@@ -238,9 +250,22 @@ def analyse(path: str) -> RhythmAnalysis:
     bpm, first_beat, grid_confidence = fit_grid(audio)
     beats = np.arange(first_beat, duration, 60 / bpm)
     phase, downbeat_confidence = downbeat_phase(downbeat_model.downbeats(audio), first_beat, 60 / bpm)
-    bar_starts = np.append(beats[phase::BEATS_PER_BAR], duration)
     musical, camelot, strength = detect_key(audio)
-    sections = detect_sections(bar_features(audio, bar_starts))
+    bands = band_frames(audio)
+    beat_features = segment_features(bands, np.append(beats, duration))
+
+    def structure(phase: int) -> tuple[np.ndarray, list]:
+        bar_starts = np.append(beats[phase::BEATS_PER_BAR], duration)
+        bar_features = segment_features(bands, bar_starts)
+        return bar_starts, detect_sections(bar_features, beat_features=beat_features, first_bar_beat=phase)
+
+    bar_starts, sections = structure(phase)
+    # Drops land on bar 1 of a bar: when they agree on another beat, the downbeat model was wrong.
+    shift = downbeat_shift(sections)
+    if shift:
+        phase = (phase + shift) % BEATS_PER_BAR
+        downbeat_confidence = max(downbeat_confidence, DROP_ALIGNED_CONFIDENCE)
+        bar_starts, sections = structure(phase)
     voice = vocal_model.voice_timeline(path)
 
     return RhythmAnalysis(

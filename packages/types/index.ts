@@ -222,6 +222,9 @@ export interface Section {
   type: SectionType;
   start_bar: number;
   end_bar: number;
+  /** Beat inside start_bar / end_bar (0-3): drops are placed to the beat. */
+  start_beat: number;
+  end_beat: number;
   confidence: number | null;
   source: "AUDIO" | "USER";
 }

@@ -210,6 +210,8 @@ class SectionOut(BaseModel):
     type: str
     start_bar: int
     end_bar: int
+    start_beat: int
+    end_beat: int
     confidence: float | None
     source: str
 

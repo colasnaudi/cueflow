@@ -96,7 +96,11 @@ class Beatgrid(Base):
 class Section(Base):
     __tablename__ = "sections"
     __table_args__ = (
-        CheckConstraint("end_bar > start_bar", name="sections_check"),
+        CheckConstraint(
+            "end_bar * 4 + end_beat > start_bar * 4 + start_beat AND start_beat BETWEEN 0 AND 3 "
+            "AND end_beat BETWEEN 0 AND 3",
+            name="sections_check",
+        ),
         Index("ix_sections_track", "track_id"),
     )
 
@@ -107,6 +111,8 @@ class Section(Base):
     type: Mapped[str] = mapped_column(Text)
     start_bar: Mapped[int] = mapped_column(Integer)
     end_bar: Mapped[int] = mapped_column(Integer)
+    start_beat: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    end_beat: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
     source: Mapped[str] = mapped_column(Text, default="AUDIO", server_default="AUDIO")
     analyzer_version: Mapped[str | None] = mapped_column(Text)

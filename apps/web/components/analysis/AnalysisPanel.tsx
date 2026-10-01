@@ -8,7 +8,15 @@ import { KeyBadge } from "@/components/library/KeyBadge";
 import { Button } from "@/components/ui/button";
 import { ErrorNotice } from "@/components/ui/error-notice";
 import { api } from "@/lib/api";
-import { SECTION_STYLE, TRUSTED_DOWNBEAT, TRUSTED_GRID, barStarts, barTime, firstDownbeat } from "@/lib/beatgrid";
+import {
+  SECTION_STYLE,
+  TRUSTED_DOWNBEAT,
+  TRUSTED_GRID,
+  barStarts,
+  firstDownbeat,
+  positionLabel,
+  positionTime,
+} from "@/lib/beatgrid";
 import { formatBpm, formatTime } from "@/lib/format";
 import { applyTrackUpdate } from "@/lib/mutations";
 import { usePlayer } from "@/lib/player";
@@ -158,15 +166,16 @@ export function AnalysisPanel({ track, analysis }: { track: Track; analysis: Tra
           {analysis?.sections.length ? (
             analysis.sections.map((section) => {
               const style = SECTION_STYLE[section.type];
+              const at = positionTime(grid, starts, section.start_bar, section.start_beat, duration);
               return (
                 <button
-                  key={`${section.type}${section.start_bar}`}
+                  key={`${section.type}${section.start_bar}.${section.start_beat}`}
                   type="button"
-                  onClick={() => usePlayer.getState().play(track, barTime(starts, section.start_bar, duration))}
+                  onClick={() => usePlayer.getState().play(track, at)}
                   className={cn("rounded px-1.5 py-0.5 text-[11px] hover:ring-1 hover:ring-foreground/40", style.className)}
-                  title={`Play from bar ${section.start_bar + 1} (${formatTime(barTime(starts, section.start_bar, duration))})`}
+                  title={`Play from bar ${positionLabel(section.start_bar, section.start_beat)} (${formatTime(at)})`}
                 >
-                  {style.label} <span className="font-mono opacity-70">{section.start_bar + 1}</span>
+                  {style.label} <span className="font-mono opacity-70">{positionLabel(section.start_bar, section.start_beat)}</span>
                 </button>
               );
             })
