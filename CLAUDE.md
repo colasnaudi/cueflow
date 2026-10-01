@@ -64,6 +64,9 @@ The current runtime implements the library-management MVP plus genre review and 
 * Live Rekordbox XML at a fixed path (`REKORDBOX_XML_PATH`, default `data/rekordbox/cueflow.xml`), rewritten
   after every audio analysis, playlists mirroring the folders — Rekordbox is pointed at it once
 * Folder right-click menu: analyse audio & cues, re-analyse, analyse genres, rescan, download XML, show in Finder
+* Rekordbox collection XML import (read-only): ratings (Rekordbox > file tag, never > USER), missing BPM/key/genre,
+  snapshot of its beatgrid and cues; exported XML keeps the DJ's Rekordbox grid and snaps cues onto it
+* User decision (2026-10-01): Cueflow cues replace the hot cues already in Rekordbox on import
 * Duplicate detection
 * Probable duplicate detection
 * Short-track cleanup
@@ -74,7 +77,6 @@ The current runtime implements the library-management MVP plus genre review and 
 These are roadmap items, not current runtime capabilities:
 
 * Cue editor (moving a cue on the waveform)
-* Rekordbox XML import
 * Ollama classification
 * Ollama embeddings
 * Semantic search

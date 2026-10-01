@@ -140,6 +140,14 @@ track, its cues and playlists mirroring your folders. Point Rekordbox to it once
 whenever you want, open rekordbox xml → Cueflow → a folder, select the tracks
 and “Import To Collection”. No download needed.
 
+**Import your Rekordbox collection** (Rekordbox → File → Export Collection in
+xml format, then “Import your Rekordbox collection” on the Rekordbox page):
+ratings come from Rekordbox (never over a rating changed in Cueflow), missing
+BPM/keys/genres are filled, and each track's Rekordbox beatgrid is kept. When a
+track has a grid in Rekordbox, the exported XML does **not** replace it: Cueflow's
+cues are snapped onto that grid instead (Cueflow's cues do replace the hot cues
+already in Rekordbox, by the DJ's choice).
+
 Right-click a folder in the sidebar to analyse its audio and cues, re-analyse
 it, suggest genres, rescan it, download its XML or show it in the Finder.
 
