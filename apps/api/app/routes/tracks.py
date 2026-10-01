@@ -119,6 +119,8 @@ def update_track(track_id: uuid.UUID, body: TrackUpdate, session: Session = Depe
             raise HTTPException(422, f"Unknown key: {body.musical_key}")
         track.musical_key, track.camelot_key = musical, camelot
         track.key_source = "USER" if camelot else None
+    if "rating" in changes:
+        track.rating_source = "USER"
     if "bpm" in changes:
         track.bpm_source = "USER" if changes["bpm"] is not None else None
     for field, value in changes.items():

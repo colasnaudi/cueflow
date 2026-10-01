@@ -110,9 +110,11 @@ def _apply(session: Session, data: dict, by_path: dict[str, Track], by_hash: dic
             track, outcome = Track(), "added"
             session.add(track)
 
-    # Never overwrite a user-set rating with the file's POPM value.
-    if outcome != "added" and track.rating:
+    # Never overwrite a rating set in Cueflow or imported from Rekordbox with the file's POPM value.
+    if outcome != "added" and (track.rating or track.rating_source in ("USER", "REKORDBOX")):
         data = {k: v for k, v in data.items() if k != "rating"}
+    elif data.get("rating"):
+        data["rating_source"] = "TAG"
     data = _keep_curated_values(track, data)
     for key, value in data.items():
         setattr(track, key, value)
@@ -188,8 +190,10 @@ def scan(root: str | Path, workers: int = 8, reread: bool = False) -> ScanStatus
                 for path, meta in zip(reread_paths, pool.map(read_metadata, reread_paths), strict=True):
                     track = by_path[str(path)]
                     data = _keep_curated_values(track, meta.as_dict())
-                    if track.rating:
+                    if track.rating or track.rating_source in ("USER", "REKORDBOX"):
                         data.pop("rating")
+                    elif data.get("rating"):
+                        data["rating_source"] = "TAG"
                     if track.id in approved_genres:
                         data.pop("genre")
                     changed = any(getattr(track, k) != v for k, v in data.items())

@@ -12,7 +12,9 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
-from app.models import Beatgrid, Cue, Track
+import numpy as np
+
+from app.models import Beatgrid, Cue, RekordboxTrack, Track
 
 KINDS = {
     ".mp3": "MP3 File",
@@ -30,6 +32,25 @@ class ExportItem:
     track: Track
     grid: Beatgrid | None
     cues: list[Cue]
+    # The track's beatgrid in Rekordbox (from the last collection import), if any: the DJ's reference.
+    rekordbox_tempo: list[dict] | None = None
+
+
+def their_grid(item: ExportItem) -> tuple[float, float] | None:
+    """(inizio, period) of the Rekordbox grid when it has Cueflow's tempo (one constant BPM), else None."""
+    tempo = item.rekordbox_tempo or []
+    if not tempo or item.grid is None or tempo[0].get("inizio") is None or not tempo[0].get("bpm"):
+        return None
+    bpm = float(item.grid.bpm)
+    if any(abs((t.get("bpm") or 0) - bpm) >= 0.05 for t in tempo):
+        return None
+    return float(tempo[0]["inizio"]), 60 / float(tempo[0]["bpm"])
+
+
+def snap(time: float, inizio: float, period: float) -> float:
+    """Nearest beat of the Rekordbox grid; a half-beat disagreement goes forward (Cueflow's offbeat grid puts
+    a drop half a beat before the kick)."""
+    return inizio + np.floor((time - inizio) / period + 0.55) * period
 
 
 def location(path: str) -> str:
@@ -41,6 +62,11 @@ def cue_time(grid: Beatgrid, bar: int, beat: int) -> float:
     period = 60 / float(grid.bpm)
     first_downbeat = float(grid.first_beat) + grid.downbeat_offset * period
     return first_downbeat + (bar * grid.beats_per_bar + beat) * period
+
+
+def _start(grid: Beatgrid, cue: Cue, offset: float, reference: tuple[float, float] | None) -> float:
+    time = cue_time(grid, cue.bar, cue.beat)
+    return snap(time, *reference) if reference else time + offset
 
 
 def _rgb(color: str | None) -> dict[str, str]:
@@ -91,7 +117,9 @@ def build(
             attributes["Rating"] = str(track.rating * 51)
         node = ET.SubElement(collection, "TRACK", attributes)
 
-        if grid is not None and include_beatgrid:
+        reference = their_grid(item)
+        # Never replace a grid the DJ already has in Rekordbox: cues are aligned on it instead.
+        if grid is not None and include_beatgrid and reference is None and not item.rekordbox_tempo:
             ET.SubElement(
                 node,
                 "TEMPO",
@@ -109,7 +137,7 @@ def build(
                 "POSITION_MARK",
                 Name=cue.label or "",
                 Type="0",
-                Start=f"{max(0.0, cue_time(grid, cue.bar, cue.beat) + offset):.3f}",
+                Start=f"{max(0.0, _start(grid, cue, offset, reference)):.3f}",
                 Num=num,
                 **_rgb(cue.color),
             )
@@ -132,17 +160,22 @@ def collect(session, folder: str | None, approved_only: bool) -> list[ExportItem
     from app.services.cues import cues_of
     from app.services.queries import folder_filter
 
-    query = select(Track, Beatgrid).join(Beatgrid, Beatgrid.track_id == Track.id).order_by(Track.path)
+    query = (
+        select(Track, Beatgrid, RekordboxTrack.tempo)
+        .join(Beatgrid, Beatgrid.track_id == Track.id)
+        .outerjoin(RekordboxTrack, RekordboxTrack.track_id == Track.id)
+        .order_by(Track.path)
+    )
     if folder:
         query = query.where(folder_filter(folder))
     items = []
-    for track, grid in session.execute(query):
+    for track, grid, rekordbox_tempo in session.execute(query):
         cues = cues_of(session, track.id)
         if approved_only:
             cues = [c for c in cues if c.approved]
         if not cues:  # a grid alone would overwrite the Rekordbox grid for nothing
             continue
-        items.append(ExportItem(track, grid, cues))
+        items.append(ExportItem(track, grid, cues, rekordbox_tempo))
     return items
 
 
@@ -183,7 +216,7 @@ def _folder_playlists(playlists: ET.Element, items: list[ExportItem], root: Path
             add(folder, child.replace(":", "/"), node[child])
 
     top = sorted((k for k in tree if k != "__tracks__"), key=str.lower)
-    root_node = ET.SubElement(playlists, "NODE", Type="0", Name="ROOT", Count=str(len(top) + 1))
+    root_node = ET.SubElement(playlists, "NODE", Type="0", Name="ROOT", Count="1")  # Count = child nodes
     cueflow = ET.SubElement(root_node, "NODE", Type="0", Name="Cueflow", Count=str(len(top) + 1))
     _playlist(cueflow, "All analysed tracks", range(1, len(items) + 1))
     for name in top:

@@ -388,3 +388,42 @@ def test_analysing_one_track_approves_its_cues_and_updates_the_rekordbox_xml(cli
     assert live["exists"]
     marks = ET.parse(live["path"]).getroot().findall("COLLECTION/TRACK/POSITION_MARK")
     assert {m.get("Name") for m in marks} >= {"START", "BREAK", "DROP"}
+
+
+def test_rekordbox_grid_is_kept_and_cues_snap_onto_it():
+    cues = [
+        Cue(slot="D", type="HOT", label="DROP", bar=48, beat=0, color="#E62828"),
+        Cue(slot="A", type="HOT", label="START", bar=0, beat=0, color="#28E214"),
+    ]
+    ours = grid()  # 120 BPM, bar 1 at 1.0 s; Rekordbox: same BPM, grid half a beat later (on the kicks)
+    item = rekordbox.ExportItem(
+        track("/Music/a.wav"), ours, cues, [{"inizio": 0.25, "bpm": 120.0, "battito": "1"}]
+    )
+    node = ET.fromstring(rekordbox.build([item], include_beatgrid=True, mp3_offset_ms=26)).find(
+        "COLLECTION/TRACK"
+    )
+    assert node.find("TEMPO") is None  # the DJ's grid in Rekordbox is never replaced
+    # 1.0 s and 97.0 s are half a beat before Rekordbox's beats (0.25 + k * 0.5): moved forward onto them.
+    assert [m.get("Start") for m in node.findall("POSITION_MARK")] == ["1.250", "97.250"]
+
+    other_bpm = rekordbox.ExportItem(track("/Music/b.mp3"), ours, cues, [{"inizio": 0.3, "bpm": 126.0}])
+    node = ET.fromstring(rekordbox.build([other_bpm], mp3_offset_ms=26)).find("COLLECTION/TRACK")
+    assert node.find("TEMPO") is None  # still not replaced...
+    assert node.findall("POSITION_MARK")[0].get("Start") == "1.026"  # ...cues keep Cueflow's own timing
+
+    no_grid = rekordbox.ExportItem(track("/Music/c.wav"), ours, cues)
+    assert ET.fromstring(rekordbox.build([no_grid])).find("COLLECTION/TRACK/TEMPO") is not None
+
+
+def test_playlist_root_count_matches_its_children(library):
+    items = [
+        rekordbox.ExportItem(
+            track(str(library / "House" / "a.mp3")),
+            grid(),
+            [Cue(slot="A", type="HOT", label="START", bar=0, beat=0)],
+        )
+    ]
+    root = ET.fromstring(rekordbox.build(items, folder_tree=library))
+    for node in root.iter("NODE"):
+        if node.get("Type") == "0":
+            assert int(node.get("Count")) == len(node.findall("NODE")), node.get("Name")

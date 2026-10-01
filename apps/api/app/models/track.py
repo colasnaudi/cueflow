@@ -42,6 +42,7 @@ class Track(Base):
     sample_rate: Mapped[int | None] = mapped_column(Integer)
 
     rating: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    rating_source: Mapped[str | None] = mapped_column(Text)  # TAG | REKORDBOX | USER
 
     file_hash: Mapped[str] = mapped_column(Text, index=True)
     # Size + mtime let a rescan skip unchanged files without re-hashing them.
