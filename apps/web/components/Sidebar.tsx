@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const AUDIO_JOB_REFRESH = [["tracks"], ["track"], ["analysis"], ["facets"]];
+const AUDIO_JOB_REFRESH = [["tracks"], ["track"], ["analysis"], ["cues"], ["facets"], ["export-preview"], ["live-xml"]];
 
 const VIEWS = [
   {

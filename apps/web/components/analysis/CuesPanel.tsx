@@ -40,21 +40,26 @@ export function CuesPanel({ track, analysis }: { track: Track; analysis: TrackAn
       <header className="flex items-center gap-2 border-b border-border/60 py-2">
         <h2 className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">Cues</h2>
         <span className={cn("rounded px-1.5 py-0.5 text-[10px]", pending ? "bg-amber-500/15 text-amber-300" : "bg-primary/15 text-primary")}>
-          {pending ? "suggested — not approved" : automatic ? "approved automatically · ready for Rekordbox" : "validated · ready for Rekordbox"}
+          {pending ? "suggested — not approved" : "✓ ready for Rekordbox"}
         </span>
         <div className="ml-auto flex items-center gap-1">
           <Button variant="ghost" size="xs" onClick={() => regenerate.mutate()} disabled={regenerate.isPending} title="Re-plan the suggestions from the sections (approved cues are kept)">
             <RotateCcw /> Regenerate
           </Button>
-          {(pending || automatic) && (
+          {pending && (
+            <Button size="xs" onClick={() => approve.mutate()} disabled={approve.isPending}>
+              <Check /> Approve cues
+            </Button>
+          )}
+          {automatic && (
             <Button
+              variant="ghost"
               size="xs"
-              variant={pending ? "default" : "ghost"}
               onClick={() => approve.mutate()}
               disabled={approve.isPending}
-              title="Lock these cues: a re-analysis will not change them"
+              title="Optional: keep these exact cues even if the track is re-analysed later"
             >
-              <Check /> {pending ? "Approve cues" : "Lock cues"}
+              Keep on re-analysis
             </Button>
           )}
           <Button variant="outline" size="xs" nativeButton={false} render={<Link href="/export" />}>

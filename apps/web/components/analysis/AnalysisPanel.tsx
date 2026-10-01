@@ -49,8 +49,10 @@ export function AnalysisPanel({ track, analysis }: { track: Track; analysis: Tra
   const client = useQueryClient();
   const setAnalysis = (value: TrackAnalysis) => {
     client.setQueryData(["analysis", track.id], value);
-    void client.invalidateQueries({ queryKey: ["track", track.id] });
-    void client.invalidateQueries({ queryKey: ["tracks"] });
+    // An analysis also (re)generates and approves the cues: show them right away.
+    for (const key of [["track", track.id], ["tracks"], ["cues", track.id], ["export-preview"], ["live-xml"]]) {
+      void client.invalidateQueries({ queryKey: key });
+    }
   };
   const analyse = useMutation({ mutationFn: (reset: boolean) => api.analyseTrack(track.id, reset), onSuccess: setAnalysis });
   const shift = useMutation({ mutationFn: (beats: number) => api.shiftDownbeat(track.id, beats), onSuccess: setAnalysis });
