@@ -2,6 +2,7 @@
 
 import json
 import re
+import struct
 import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -181,8 +182,52 @@ def read_metadata(path: Path) -> TrackMetadata:
             meta.musical_key, meta.camelot_key = normalize_key(_first(tags, fields["key"]))
             meta.rating = _popm_to_stars(tags)
 
+    if path.suffix.lower() == ".wav":
+        # WAV's native tags (RIFF INFO) are not read by mutagen; ID3 values win when both exist.
+        info = read_riff_info(path)
+        meta.title = meta.title or info.get("INAM")
+        meta.artist = meta.artist or info.get("IART")
+        meta.album = meta.album or info.get("IPRD")
+        meta.genre = meta.genre or info.get("IGNR")
+        meta.year = meta.year or _parse_year(info.get("ICRD"))
+
     if meta.duration_ms is None:
         meta.duration_ms = _ffprobe_duration(path)
 
     _apply_filename_fallback(meta, path)
     return meta
+
+
+def read_riff_info(path: Path) -> dict[str, str]:
+    """Fields of a WAV file's LIST/INFO chunk (INAM title, IART artist, IPRD album, IGNR genre, ICRD date...).
+
+    Walks the RIFF chunk headers with seeks, so the audio data is never read.
+    """
+    fields: dict[str, str] = {}
+    try:
+        with path.open("rb") as fh:
+            header = fh.read(12)
+            if len(header) < 12 or header[:4] != b"RIFF" or header[8:12] != b"WAVE":
+                return fields
+            while chunk := fh.read(8):
+                if len(chunk) < 8:
+                    break
+                chunk_id, size = chunk[:4], struct.unpack("<I", chunk[4:])[0]
+                if chunk_id == b"LIST" and fh.read(4) == b"INFO":
+                    body = fh.read(size - 4)
+                    offset = 0
+                    while offset + 8 <= len(body):
+                        sub_id = body[offset : offset + 4].decode("latin-1")
+                        sub_size = struct.unpack("<I", body[offset + 4 : offset + 8])[0]
+                        raw = body[offset + 8 : offset + 8 + sub_size].split(b"\0", 1)[0]
+                        text = raw.decode("utf-8", "replace").strip()
+                        if text:
+                            fields[sub_id] = text
+                        offset += 8 + sub_size + (sub_size & 1)
+                    if size & 1:
+                        fh.seek(1, 1)
+                else:
+                    fh.seek(size + (size & 1) - (4 if chunk_id == b"LIST" else 0), 1)
+    except OSError:
+        return {}
+    return fields

@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.audio.metadata import AUDIO_EXTENSIONS, read_metadata
 from app.config import get_settings, music_root
 from app.db import SessionLocal
-from app.models import Track
+from app.models import GenreReview, Track
 
 log = logging.getLogger(__name__)
 
@@ -136,7 +136,9 @@ def _keep_curated_values(track: Track, data: dict) -> dict:
     return data
 
 
-def scan(root: str | Path, workers: int = 8) -> ScanStatus:
+def scan(root: str | Path, workers: int = 8, reread: bool = False) -> ScanStatus:
+    """`reread`: also re-read the tags of unchanged files (after a metadata reader improvement); their hash is
+    reused, so it stays fast."""
     global status
     root = Path(root).expanduser().resolve()
     if not root.is_dir():
@@ -162,7 +164,10 @@ def scan(root: str | Path, workers: int = 8) -> ScanStatus:
             for t in known:
                 by_hash.setdefault(t.file_hash, []).append(t)
 
-            todo = []
+            todo, reread_paths = [], []
+            approved_genres = set(
+                session.scalars(select(GenreReview.track_id).where(GenreReview.status == "APPROVED"))
+            )
             for path in files:
                 track = by_path.get(str(path))
                 try:
@@ -171,17 +176,41 @@ def scan(root: str | Path, workers: int = 8) -> ScanStatus:
                     status.errors.append(f"{path}: {exc}")
                     continue
                 if track and track.file_size == stat.st_size and track.file_mtime_ns == stat.st_mtime_ns:
+                    if reread:
+                        reread_paths.append(path)
+                        continue
                     status.unchanged += 1
                     status.processed += 1
                 else:
                     todo.append(path)
 
             with ThreadPoolExecutor(max_workers=workers) as pool:
+                for path, meta in zip(reread_paths, pool.map(read_metadata, reread_paths), strict=True):
+                    track = by_path[str(path)]
+                    data = _keep_curated_values(track, meta.as_dict())
+                    if track.rating:
+                        data.pop("rating")
+                    if track.id in approved_genres:
+                        data.pop("genre")
+                    changed = any(getattr(track, k) != v for k, v in data.items())
+                    for key, value in data.items():
+                        setattr(track, key, value)
+                    status.updated += changed
+                    status.unchanged += not changed
+                    status.processed += 1
+                session.commit()
+
                 futures = {pool.submit(_inspect, path): path for path in todo}
                 for pending, future in enumerate(as_completed(futures), start=1):
                     path = futures[future]
                     try:
-                        outcome = _apply(session, future.result(), by_path, by_hash)
+                        result = future.result()
+                        if (
+                            by_path.get(result["path"]) is not None
+                            and by_path[result["path"]].id in approved_genres
+                        ):
+                            result.pop("genre")  # a genre approved in Genre Review beats the file tag
+                        outcome = _apply(session, result, by_path, by_hash)
                         setattr(status, outcome, getattr(status, outcome) + 1)
                     except Exception as exc:  # one broken file must not abort the whole scan
                         log.warning("scan failed for %s: %s", path, exc)
@@ -216,13 +245,13 @@ def resolve_scan_root(path: str | None) -> Path:
     return target
 
 
-def start_in_background(root: Path) -> None:
+def start_in_background(root: Path, reread: bool = False) -> None:
     if status.running:
         raise RuntimeError("A scan is already running")
 
     def run() -> None:
         try:
-            scan(root)
+            scan(root, reread=reread)
         except Exception:  # already recorded in status (state=failed); keep the traceback in the logs
             log.exception("library scan failed")
 
@@ -231,7 +260,8 @@ def start_in_background(root: Path) -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    target = sys.argv[1] if len(sys.argv) > 1 else get_settings().music_root
+    args = [a for a in sys.argv[1:] if a != "--reread"]
+    target = args[0] if args else get_settings().music_root
     done = {"flag": False}
 
     def report() -> None:
@@ -240,7 +270,7 @@ if __name__ == "__main__":
             print(f"\r{status.processed}/{status.total} files", end="", flush=True)
 
     threading.Thread(target=report, daemon=True).start()
-    result = scan(target)
+    result = scan(target, reread="--reread" in sys.argv)
     done["flag"] = True
     summary = result.as_dict()
     print(f"\nScanned {result.root} in {result.finished_at - result.started_at:.1f}s")

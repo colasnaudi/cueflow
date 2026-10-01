@@ -96,6 +96,7 @@ class FolderNode(BaseModel):
 
 class ScanRequest(BaseModel):
     path: str | None = None
+    reread: bool = False  # re-read the tags of unchanged files too
 
 
 SortField = Literal["artist", "title", "bpm", "key", "genre", "rating", "duration", "added"]

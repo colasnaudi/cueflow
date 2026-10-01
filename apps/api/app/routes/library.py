@@ -19,7 +19,7 @@ def start_scan(body: ScanRequest | None = None):
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     try:
-        scanner.start_in_background(root)
+        scanner.start_in_background(root, reread=bool(body and body.reread))
     except RuntimeError as exc:
         raise HTTPException(409, str(exc)) from exc
     return {"root": str(root)}
