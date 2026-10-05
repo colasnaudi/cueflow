@@ -275,3 +275,61 @@ class LiveXml(BaseModel):
 
 class FolderRequest(BaseModel):
     folder: str = Field(min_length=1)
+
+
+class EditSegment(BaseModel):
+    """A slice of the original, in frames at the edit's sample rate, with its gain ramps (fades)."""
+
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+    # Linear gain ramps multiplied together over the segment: [[gain at start, gain at end], ...] in [0, 1].
+    ramps: list[tuple[float, float]] = Field(default_factory=list, max_length=32)
+
+    @field_validator("end")
+    @classmethod
+    def after_start(cls, end: int, info) -> int:
+        if end <= info.data.get("start", 0):
+            raise ValueError("a segment must end after it starts")
+        return end
+
+    @field_validator("ramps")
+    @classmethod
+    def unit_gains(cls, ramps: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        if any(not 0 <= g <= 1 for ramp in ramps for g in ramp):
+            raise ValueError("ramp gains must be between 0 and 1")
+        return ramps
+
+
+class EditList(BaseModel):
+    sample_rate: int = Field(gt=0, le=384_000)
+    gain_db: float = Field(default=0, ge=-48, le=48)
+    segments: list[EditSegment] = Field(min_length=1, max_length=5000)
+
+
+class TrackEditOut(BaseModel):
+    track_id: uuid.UUID
+    # The rate the editor decodes the original at: segment frames are counted at this rate.
+    sample_rate: int
+    edit: EditList | None
+    updated_at: datetime | None
+
+
+class EditExport(BaseModel):
+    edit: EditList
+    format: Literal["wav", "mp3"]
+    # WAV: bit depth (16 | 24). MP3: bitrate in kbps (192 | 256 | 320).
+    quality: Literal[16, 24, 192, 256, 320]
+
+    @field_validator("quality")
+    @classmethod
+    def matches_format(cls, quality: int, info) -> int:
+        allowed = {16, 24} if info.data.get("format") == "wav" else {192, 256, 320}
+        if quality not in allowed:
+            raise ValueError(f"quality must be one of {sorted(allowed)} for this format")
+        return quality
+
+
+class EditExportResult(BaseModel):
+    path: str
+    filename: str
+    duration_ms: int

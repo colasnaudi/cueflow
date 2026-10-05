@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     # The XML file Rekordbox is pointed at once (Preferences > Advanced > Database > rekordbox xml).
     # Default: data/rekordbox/cueflow.xml in the repository.
     rekordbox_xml_path: str | None = None
+    # Where the audio editor writes exported edits.
+    # Default: data/edits/ in the repository, outside the music library.
+    edits_dir: str | None = None
 
     ollama_url: str = "http://localhost:11434"
     ollama_llm_model: str = "gemma4:12b-it-qat"
@@ -40,3 +43,8 @@ def get_settings() -> Settings:
 
 def music_root() -> Path:
     return Path(get_settings().music_root).expanduser().resolve()
+
+
+def edits_dir() -> Path:
+    configured = get_settings().edits_dir
+    return Path(configured).expanduser().resolve() if configured else get_settings().data_dir / "edits"
