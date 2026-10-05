@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 
-import { BLOCK, type FrameRange } from "@/lib/editor";
+import { BLOCK, type FrameRange, type WaveSummary, bandColor } from "@/lib/editor";
 
 export interface WaveformHandle {
   /** Zoom by `factor` (> 1 = in) around `frame` (default: the middle of the view). */
@@ -32,8 +32,10 @@ export interface BeatLine {
 interface EditorWaveformProps {
   ref?: React.Ref<WaveformHandle>;
   buffer: AudioBuffer;
-  /** Max |sample| per BLOCK frames of `buffer`. */
-  blocks: Float32Array;
+  /** Per-block peaks and bands of `buffer`. */
+  blocks: WaveSummary;
+  /** Colour columns by frequency (red lows, green mids, blue highs) instead of one colour. */
+  colored?: boolean;
   /** Linear gain applied to the drawing (the edit's gain on B, 1 on A). */
   gain: number;
   /** Selection and segment joins are only shown and editable on the edited side. */
@@ -74,12 +76,27 @@ function label(seconds: number, step: number) {
   return `${minutes}:${rest.toFixed(decimals).padStart(decimals ? 3 + decimals : 2, "0")}`;
 }
 
+/** Band colour between two frames (from the blocks they cover, or the block they sit in when zoomed in). */
+function columnColor(blocks: WaveSummary, from: number, to: number) {
+  let low = 0;
+  let mid = 0;
+  let high = 0;
+  const first = Math.floor(from / BLOCK);
+  const last = Math.max(first + 1, Math.min(blocks.peak.length, Math.ceil(to / BLOCK)));
+  for (let b = first; b < last; b++) {
+    if (blocks.low[b] > low) low = blocks.low[b];
+    if (blocks.mid[b] > mid) mid = blocks.mid[b];
+    if (blocks.high[b] > high) high = blocks.high[b];
+  }
+  return bandColor(low, mid, high);
+}
+
 /** Max |sample| between two frames: from the block summary when zoomed out, else from the samples. */
-function amplitude(buffer: AudioBuffer, blocks: Float32Array, from: number, to: number) {
+function amplitude(buffer: AudioBuffer, blocks: WaveSummary, from: number, to: number) {
   let peak = 0;
   if (to - from >= BLOCK) {
-    for (let b = Math.floor(from / BLOCK); b < Math.min(blocks.length, Math.ceil(to / BLOCK)); b++) {
-      if (blocks[b] > peak) peak = blocks[b];
+    for (let b = Math.floor(from / BLOCK); b < Math.min(blocks.peak.length, Math.ceil(to / BLOCK)); b++) {
+      if (blocks.peak[b] > peak) peak = blocks.peak[b];
     }
     return peak;
   }
@@ -115,6 +132,7 @@ export function EditorWaveform({
   ref,
   buffer,
   blocks,
+  colored = true,
   gain,
   editable,
   selection,
@@ -212,7 +230,7 @@ export function EditorWaveform({
       const x1 = Math.min(width, xOf(selection.end));
       if (x1 > x0) {
         ctx.fillStyle = accent;
-        ctx.globalAlpha = 0.14;
+        ctx.globalAlpha = colored ? 0.22 : 0.14;
         ctx.fillRect(x0, RULER, x1 - x0, waveHeight);
         ctx.globalAlpha = 1;
       }
@@ -224,9 +242,28 @@ export function EditorWaveform({
       if (from >= length) break;
       const value = amplitude(buffer, blocks, from, from + view.fpp) * gain;
       const inSelection = editable && selection && from >= selection.start && from < selection.end;
-      ctx.fillStyle = value > 1 ? clip : inSelection ? accent : wave;
       const half = Math.max(0.5, (Math.min(1, value) * waveHeight) / 2 - 1);
-      ctx.fillRect(x, middle - half, 1, half * 2);
+      if (colored) {
+        // The selection is shown by its background; clipping by red caps (red alone means bass here).
+        ctx.fillStyle = columnColor(blocks, from, from + view.fpp);
+        ctx.fillRect(x, middle - half, 1, half * 2);
+        if (value > 1) {
+          ctx.fillStyle = clip;
+          ctx.fillRect(x, middle - half, 1, 2);
+          ctx.fillRect(x, middle + half - 2, 1, 2);
+        }
+      } else {
+        ctx.fillStyle = value > 1 ? clip : inSelection ? accent : wave;
+        ctx.fillRect(x, middle - half, 1, half * 2);
+      }
+    }
+
+    if (editable && selection) {
+      ctx.fillStyle = accent;
+      for (const frame of [selection.start, selection.end]) {
+        const x = Math.round(xOf(frame));
+        if (x >= 0 && x <= width) ctx.fillRect(x, RULER, 1, waveHeight);
+      }
     }
 
     if (editable) {
@@ -268,7 +305,7 @@ export function EditorWaveform({
       ctx.fillText(label(t, step), x + 3, 2);
     }
     ctx.fillRect(0, RULER - 1, width, 1);
-  }, [buffer, blocks, gain, editable, selection, boundaries, view, width, height, waveHeight, length, rate, beats]);
+  }, [buffer, blocks, colored, gain, editable, selection, boundaries, view, width, height, waveHeight, length, rate, beats]);
 
   // Overview: the whole track and the visible window.
   useEffect(() => {
@@ -276,9 +313,10 @@ export function EditorWaveform({
     if (!canvas || !view || !width) return;
     const ctx = setupCanvas(canvas, width, OVERVIEW);
     const fpp = length / width;
-    ctx.fillStyle = color("--wave", "#555");
+    const wave = color("--wave", "#555");
     for (let x = 0; x < width; x++) {
       const value = Math.min(1, amplitude(buffer, blocks, x * fpp, (x + 1) * fpp) * gain);
+      ctx.fillStyle = colored ? columnColor(blocks, x * fpp, (x + 1) * fpp) : wave;
       const half = Math.max(0.5, (value * OVERVIEW) / 2 - 1);
       ctx.fillRect(x, OVERVIEW / 2 - half, 1, half * 2);
     }
@@ -286,7 +324,7 @@ export function EditorWaveform({
     ctx.globalAlpha = 0.12;
     ctx.fillRect(view.start / fpp, 0, Math.max(2, (view.fpp * width) / fpp), OVERVIEW);
     ctx.globalAlpha = 1;
-  }, [buffer, blocks, gain, view, width, length]);
+  }, [buffer, blocks, colored, gain, view, width, length]);
 
   // Playhead: its own layer, redrawn every animation frame; follows playback page by page.
   useEffect(() => {

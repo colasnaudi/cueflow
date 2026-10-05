@@ -57,6 +57,7 @@ import {
   renderEdit,
   splitEdit,
   summarize,
+  summarizeEdit,
   toEdited,
   toSource,
   trimTo,
@@ -79,6 +80,8 @@ const TABS: [Tab, string][] = [
   ["sections", "Sections"],
   ["notes", "Notes"],
 ];
+/** Remembers the waveform style (per browser). */
+const COLOR_KEY = "cueflow.editor.waveform";
 /** The grid is saved this long after the last change (BPM clicks, nudges). */
 const GRID_SAVE_DELAY_MS = 400;
 
@@ -138,13 +141,14 @@ export function Editor({ track, original, engine }: EditorProps) {
 
   const rate = original.sampleRate;
   const segments = edit?.segments;
+  // Bands (waveform colours) are filtered once on the original; an edit reuses them where that audio is heard.
+  const originalBlocks = useMemo(() => summarize(original), [original]);
   // The gain is applied live by the engine: only the segments (cuts, fades) need a new render.
   const rendered = useMemo(() => {
     if (!edit) return null;
     const buffer = renderEdit(original, edit);
-    return { buffer, blocks: summarize(buffer), peak: peakOf(buffer) };
-  }, [original, segments]); // eslint-disable-line react-hooks/exhaustive-deps
-  const originalBlocks = useMemo(() => summarize(original), [original]);
+    return { buffer, blocks: summarizeEdit(buffer, edit, originalBlocks), peak: peakOf(buffer) };
+  }, [original, originalBlocks, segments]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (rendered) engine.setEdited(rendered.buffer);
@@ -169,6 +173,23 @@ export function Editor({ track, original, engine }: EditorProps) {
   const prep = useDjPrep(track.id);
   const { update: updateTrack } = useTrackMutations(track.id);
   const [tab, setTab] = useState<Tab>("edit");
+  const [colored, setColored] = useState(() => {
+    try {
+      return localStorage.getItem(COLOR_KEY) !== "mono";
+    } catch {
+      return true;
+    }
+  });
+  const toggleColors = () => {
+    setColored((current) => {
+      try {
+        localStorage.setItem(COLOR_KEY, current ? "mono" : "color");
+      } catch {
+        // private mode: the choice just isn't remembered
+      }
+      return !current;
+    });
+  };
   const [selectedSection, setSelectedSection] = useState<number | null>(null);
   const [loopLength, setLoopLength] = useState(4);
   const [taps, setTaps] = useState<number[]>([]);
@@ -585,6 +606,7 @@ export function Editor({ track, original, engine }: EditorProps) {
             ref={waveform}
             buffer={shown.buffer}
             blocks={shown.blocks}
+            colored={colored}
             gain={editing ? 10 ** (gainDb / 20) : 1}
             editable={editing}
             selection={selection}
@@ -741,6 +763,22 @@ export function Editor({ track, original, engine }: EditorProps) {
             <span className={cn(!editing && "text-primary")}>A</span>/<span className={cn(editing && "text-primary")}>B</span>
           </Button>
           <div className="ml-4 flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              title="Waveform colours: red = lows (kick, bass), green = mids, blue = highs"
+              onClick={toggleColors}
+            >
+              {colored ? (
+                <span className="font-mono">
+                  <span className="text-red-400">R</span>
+                  <span className="text-green-400">G</span>
+                  <span className="text-blue-400">B</span>
+                </span>
+              ) : (
+                "Mono"
+              )}
+            </Button>
             <Button variant="ghost" size="icon-sm" title="Zoom out (−)" onClick={() => waveform.current?.zoom(0.5, playhead())}>
               <Minus />
             </Button>

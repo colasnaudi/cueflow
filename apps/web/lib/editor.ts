@@ -203,18 +203,102 @@ export function peakOf(buffer: AudioBuffer): number {
 /** Frames per waveform summary block. */
 export const BLOCK = 128;
 
-/** Max absolute sample per BLOCK frames (all channels): what the waveform draws when zoomed out. */
-export function summarize(buffer: AudioBuffer): Float32Array {
-  const blocks = new Float32Array(Math.ceil(buffer.length / BLOCK));
+/** Per BLOCK frames: the loudest sample, and the loudest low / mid / high band (DJ "RGB" waveform colours). */
+export interface WaveSummary {
+  peak: Float32Array;
+  low: Float32Array;
+  mid: Float32Array;
+  high: Float32Array;
+}
+
+/** Band filters of the coloured waveform: lows (kick, bass), mids (vocals, synths), highs (hats). */
+const LOW_HZ = 200;
+const MID_HZ = 630;
+const HIGH_HZ = 2000;
+
+type Biquad = [number, number, number, number, number]; // b0, b1, b2, a1, a2 (normalised by a0)
+
+/** RBJ cookbook biquads. */
+function biquad(kind: "low" | "band" | "high", hz: number, q: number, rate: number): Biquad {
+  const w = (2 * Math.PI * hz) / rate;
+  const cos = Math.cos(w);
+  const alpha = Math.sin(w) / (2 * q);
+  const a0 = 1 + alpha;
+  const b =
+    kind === "low" ? [(1 - cos) / 2, 1 - cos, (1 - cos) / 2] : kind === "high" ? [(1 + cos) / 2, -(1 + cos), (1 + cos) / 2] : [alpha, 0, -alpha];
+  return [b[0] / a0, b[1] / a0, b[2] / a0, (-2 * cos) / a0, (1 - alpha) / a0];
+}
+
+/** Per block, the max |sample| of every channel: what amplitude is drawn from. */
+function peaks(buffer: AudioBuffer): Float32Array {
+  const result = new Float32Array(Math.ceil(buffer.length / BLOCK));
   for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
     const data = buffer.getChannelData(channel);
     for (let i = 0; i < data.length; i++) {
       const value = Math.abs(data[i]);
       const block = (i / BLOCK) | 0;
-      if (value > blocks[block]) blocks[block] = value;
+      if (value > result[block]) result[block] = value;
     }
   }
-  return blocks;
+  return result;
+}
+
+/**
+ * Peaks plus the max of three bands of the mono mix per block (one pass of three biquads). Used for the
+ * original; an edit reuses these bands through `summarizeEdit` instead of filtering again.
+ */
+export function summarize(buffer: AudioBuffer): WaveSummary {
+  const count = Math.ceil(buffer.length / BLOCK);
+  const bands = [new Float32Array(count), new Float32Array(count), new Float32Array(count)];
+  const filters = [
+    biquad("low", LOW_HZ, Math.SQRT1_2, buffer.sampleRate),
+    biquad("band", MID_HZ, 0.6, buffer.sampleRate),
+    biquad("high", HIGH_HZ, Math.SQRT1_2, buffer.sampleRate),
+  ];
+  const state = filters.map(() => [0, 0, 0, 0]); // x1, x2, y1, y2
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
+  for (let i = 0; i < buffer.length; i++) {
+    let x = 0;
+    for (const data of channels) x += data[i];
+    x /= channels.length;
+    const block = (i / BLOCK) | 0;
+    for (let f = 0; f < 3; f++) {
+      const [b0, b1, b2, a1, a2] = filters[f];
+      const st = state[f];
+      const y = b0 * x + b1 * st[0] + b2 * st[1] - a1 * st[2] - a2 * st[3];
+      st[1] = st[0];
+      st[0] = x;
+      st[3] = st[2];
+      st[2] = y;
+      const value = Math.abs(y);
+      if (value > bands[f][block]) bands[f][block] = value;
+    }
+  }
+  return { peak: peaks(buffer), low: bands[0], mid: bands[1], high: bands[2] };
+}
+
+/** The rendered edit's peaks, with each block coloured like the original audio heard there. */
+export function summarizeEdit(rendered: AudioBuffer, edit: EditList, original: WaveSummary): WaveSummary {
+  const peak = peaks(rendered);
+  const pick = (bands: Float32Array) =>
+    Float32Array.from(peak, (_, block) => bands[Math.min(bands.length - 1, (toSource(edit, block * BLOCK) / BLOCK) | 0)]);
+  return { peak, low: pick(original.low), mid: pick(original.mid), high: pick(original.high) };
+}
+
+/**
+ * Rekordbox/Serato-style colour of a waveform column: red = lows, green = mids, blue = highs. Mids and highs are
+ * boosted (they carry far less energy than the kick and bass in club music) so hats and vocals show.
+ */
+const MID_BOOST = 1.6;
+const HIGH_BOOST = 2.5;
+
+export function bandColor(low: number, mid: number, high: number): string {
+  const r = low;
+  const g = mid * MID_BOOST;
+  const b = high * HIGH_BOOST;
+  const max = Math.max(r, g, b) || 1;
+  const channel = (v: number) => Math.round(40 + (215 * v) / max);
+  return `rgb(${channel(r)},${channel(g)},${channel(b)})`;
 }
 
 /** Every edited-timeline frame where original frame `frame` is heard (a duplicated part is heard twice). */
