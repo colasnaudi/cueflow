@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routes import analysis, cleanup, cues, editor, library, rekordbox, review, tracks
+from app.routes import analysis, annotations, cleanup, cues, editor, library, rekordbox, review, tracks
 
 app = FastAPI(title="Cueflow API", version="0.1.0")
 app.add_middleware(
@@ -19,6 +19,7 @@ app.include_router(analysis.router)
 app.include_router(cues.router)
 app.include_router(rekordbox.router)
 app.include_router(editor.router)
+app.include_router(annotations.router)
 
 
 @app.get("/health")

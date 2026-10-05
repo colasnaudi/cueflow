@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from app.models import Beatgrid, Cue, RekordboxTrack, Track
+from app.services.tempo import TempoMap, anchors_of
 
 KINDS = {
     ".mp3": "MP3 File",
@@ -37,9 +38,12 @@ class ExportItem:
 
 
 def their_grid(item: ExportItem) -> tuple[float, float] | None:
-    """(inizio, period) of the Rekordbox grid when it has Cueflow's tempo (one constant BPM), else None."""
+    """(inizio, period) of the Rekordbox grid when it has Cueflow's tempo (one constant BPM), else None.
+    None as well when the DJ edited the grid in Cueflow: that grid is exported and cues follow it."""
     tempo = item.rekordbox_tempo or []
     if not tempo or item.grid is None or tempo[0].get("inizio") is None or not tempo[0].get("bpm"):
+        return None
+    if _dj_grid(item):
         return None
     bpm = float(item.grid.bpm)
     if any(abs((t.get("bpm") or 0) - bpm) >= 0.05 for t in tempo):
@@ -70,15 +74,33 @@ def location(path: str) -> str:
     return "file://localhost" + encoded
 
 
-def cue_time(grid: Beatgrid, bar: int, beat: int) -> float:
-    period = 60 / float(grid.bpm)
-    first_downbeat = float(grid.first_beat) + grid.downbeat_offset * period
-    return first_downbeat + (bar * grid.beats_per_bar + beat) * period
+def _dj_grid(item: ExportItem) -> bool:
+    """A grid set or corrected in Cueflow is the DJ's latest word: it replaces the one in Rekordbox."""
+    return item.grid is not None and item.grid.source == "USER"
 
 
-def _start(grid: Beatgrid, cue: Cue, offset: float, reference: tuple[float, float] | None) -> float:
-    time = cue_time(grid, cue.bar, cue.beat)
+def cue_time(grid: Beatgrid, bar: int, beat: float) -> float:
+    return TempoMap.of(grid).time_of(bar, beat)
+
+
+def _place(time: float, offset: float, reference: tuple[float, float] | None) -> float:
     return snap(time, *reference) if reference else time + offset
+
+
+def _tempo_entries(node: ET.Element, grid: Beatgrid, offset: float) -> None:
+    if not grid.anchors:  # constant grid: one entry on bar 1
+        attributes = {"Inizio": f"{cue_time(grid, 0, 0) + offset:.3f}", "Bpm": f"{float(grid.bpm):.2f}"}
+        ET.SubElement(node, "TEMPO", attributes, Metro="4/4", Battito="1")
+        return
+    for anchor in anchors_of(grid):
+        ET.SubElement(
+            node,
+            "TEMPO",
+            Inizio=f"{anchor.time + offset:.3f}",
+            Bpm=f"{anchor.bpm:.2f}",
+            Metro="4/4",
+            Battito=str(anchor.beat),
+        )
 
 
 def _rgb(color: str | None) -> dict[str, str]:
@@ -130,29 +152,20 @@ def build(
         node = ET.SubElement(collection, "TRACK", attributes)
 
         reference = their_grid(item)
-        # Never replace a grid the DJ already has in Rekordbox: cues are aligned on it instead.
-        if grid is not None and include_beatgrid and reference is None and not item.rekordbox_tempo:
-            ET.SubElement(
-                node,
-                "TEMPO",
-                Inizio=f"{cue_time(grid, 0, 0) + offset:.3f}",
-                Bpm=f"{float(grid.bpm):.2f}",
-                Metro="4/4",
-                Battito="1",
-            )
+        # Never replace a grid the DJ already has in Rekordbox (cues are aligned on it instead), unless the DJ
+        # edited the grid in Cueflow.
+        if grid is not None and include_beatgrid and (_dj_grid(item) or not item.rekordbox_tempo):
+            _tempo_entries(node, grid, offset)
         if grid is None:
             continue
         for cue in sorted(item.cues, key=lambda c: (c.type != "HOT", c.slot)):
             num = str(HOT_SLOTS.index(cue.slot)) if cue.type == "HOT" and cue.slot in HOT_SLOTS else "-1"
-            ET.SubElement(
-                node,
-                "POSITION_MARK",
-                Name=cue.label or "",
-                Type="0",
-                Start=f"{max(0.0, _start(grid, cue, offset, reference)):.3f}",
-                Num=num,
-                **_rgb(cue.color),
-            )
+            start = max(0.0, _place(cue_time(grid, cue.bar, cue.beat), offset, reference))
+            mark = {"Name": cue.label or "", "Type": "0", "Start": f"{start:.3f}", "Num": num}
+            if cue.loop_beats:  # a loop: Type 4 with its end
+                end = cue_time(grid, cue.bar, cue.beat + float(cue.loop_beats))
+                mark.update(Type="4", End=f"{max(start, _place(end, offset, reference)):.3f}")
+            ET.SubElement(node, "POSITION_MARK", mark, **_rgb(cue.color))
 
     playlists = ET.SubElement(root, "PLAYLISTS")
     if folder_tree is not None:
@@ -229,8 +242,12 @@ def _folder_playlists(playlists: ET.Element, items: list[ExportItem], root: Path
 
     top = sorted((k for k in tree if k != "__tracks__"), key=str.lower)
     root_node = ET.SubElement(playlists, "NODE", Type="0", Name="ROOT", Count="1")  # Count = child nodes
-    cueflow = ET.SubElement(root_node, "NODE", Type="0", Name="Cueflow", Count=str(len(top) + 1))
+    has_edits = any(item.track.edited_from is not None for item in items)
+    cueflow = ET.SubElement(root_node, "NODE", Type="0", Name="Cueflow", Count=str(len(top) + 1 + has_edits))
     _playlist(cueflow, "All analysed tracks", range(1, len(items) + 1))
+    edits = [i for i, item in enumerate(items, start=1) if item.track.edited_from is not None]
+    if edits:  # exported from the audio editor, outside the music folders
+        _playlist(cueflow, "Edits", edits)
     for name in top:
         add(cueflow, name.replace(":", "/"), tree[name])
 

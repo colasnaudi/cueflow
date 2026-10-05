@@ -19,7 +19,7 @@ from app.audio import rhythm
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import AudioAnalysis, Beatgrid, Cue, Section, Track
-from app.services import cues
+from app.services import cues, tempo
 from app.services.cue_engine import plan_cues
 from app.services.folders import is_sample_folder
 from app.services.jobs import JobStatus
@@ -61,6 +61,7 @@ def save(session: Session, track: Track, result: dict, reset_grid: bool = False)
                 result["downbeat_confidence"],
             )
             grid.source, grid.analyzer_version = "ANALYSIS", rhythm.ANALYZER_VERSION
+            grid.anchors = None
 
         analysis = dsp_analysis(session, copy.id)
         if analysis is None:
@@ -73,11 +74,12 @@ def save(session: Session, track: Track, result: dict, reset_grid: bool = False)
         analysis.instrumental_probability = round(1 - result["vocal_probability"], 3)
         analysis.analyzed_at = datetime.now()
 
-        # Detected sections are replaced; sections typed by the user (future cue editor) are kept.
+        # Detected sections are replaced; sections edited by the DJ (USER) are kept and take precedence.
         session.execute(delete(Section).where(Section.track_id == copy.id, Section.source == "AUDIO"))
         for section in result["sections"]:
             session.add(Section(track_id=copy.id, analyzer_version=rhythm.ANALYZER_VERSION, **section))
-        detected = [
+        session.flush()
+        detected = user_sections(session, copy.id) or [
             SimpleNamespace(**{"start_beat": 0, "end_beat": 0, **section}) for section in result["sections"]
         ]
         cues.replace_suggestions(session, copy.id, plan_cues(detected, result["vocal_curve"]))
@@ -119,8 +121,42 @@ def shift_downbeat(session: Session, track: Track, beats: int) -> None:
     for copy in copies_of(session, track):
         grid = session.get(Beatgrid, copy.id)
         if grid is not None:
-            grid.downbeat_offset = (grid.downbeat_offset + beats) % grid.beats_per_bar
+            # Bar 1 `beats` later = every anchor's beat sits `beats` earlier in its bar.
+            anchors = [
+                tempo.Anchor(a.time, a.bpm, (a.beat - 1 - beats) % 4 + 1) for a in tempo.anchors_of(grid)
+            ]
+            tempo.store(grid, anchors)
             grid.source = "USER"
+
+
+def set_grid(session: Session, track: Track, anchors: list[tempo.Anchor]) -> None:
+    """The DJ's beatgrid (constant or with tempo changes), on every identical copy; it becomes the BPM too."""
+    for copy in copies_of(session, track):
+        grid = session.get(Beatgrid, copy.id)
+        if grid is None:
+            grid = Beatgrid(track_id=copy.id)
+            session.add(grid)
+        tempo.store(grid, anchors)
+        grid.source = "USER"
+        copy.bpm, copy.bpm_source = round(grid.bpm, 2), "USER"
+
+
+def user_sections(session: Session, track_id) -> list[Section]:
+    query = select(Section).where(Section.track_id == track_id, Section.source == "USER")
+    return list(session.scalars(query.order_by(Section.start_bar, Section.start_beat)))
+
+
+def set_sections(session: Session, track: Track, sections: list[dict]) -> None:
+    """The DJ's sections replace the detected ones on display and for cues; the detected ones are kept."""
+    for copy in copies_of(session, track):
+        session.execute(delete(Section).where(Section.track_id == copy.id, Section.source == "USER"))
+        for section in sections:
+            session.add(Section(track_id=copy.id, source="USER", **section))
+
+
+def restore_sections(session: Session, track: Track) -> None:
+    for copy in copies_of(session, track):
+        session.execute(delete(Section).where(Section.track_id == copy.id, Section.source == "USER"))
 
 
 def eligible_tracks(session: Session, folder: str | None = None, force: bool = False) -> list[Track]:
@@ -225,8 +261,13 @@ def request_stop() -> None:
 
 
 def sections_of(session: Session, track_id) -> list[Section]:
-    return list(
-        session.scalars(select(Section).where(Section.track_id == track_id).order_by(Section.start_bar))
+    """The DJ's sections when there are any, else the detected ones."""
+    return user_sections(session, track_id) or list(
+        session.scalars(
+            select(Section)
+            .where(Section.track_id == track_id, Section.source != "USER")
+            .order_by(Section.start_bar)
+        )
     )
 
 

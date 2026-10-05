@@ -90,6 +90,8 @@ class Beatgrid(Base):
     downbeat_confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
     source: Mapped[str] = mapped_column(Text, default="ANALYSIS", server_default="ANALYSIS")
     analyzer_version: Mapped[str | None] = mapped_column(Text)
+    # Variable tempo (services/tempo.py): [{"time", "bpm", "beat"}]; None = the constant grid above.
+    anchors: Mapped[list[dict] | None] = mapped_column(JSONB)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
@@ -116,3 +118,6 @@ class Section(Base):
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
     source: Mapped[str] = mapped_column(Text, default="AUDIO", server_default="AUDIO")
     analyzer_version: Mapped[str | None] = mapped_column(Text)
+    # Set by the DJ (source USER): a custom name and a colour (#rrggbb).
+    label: Mapped[str | None] = mapped_column(Text)
+    color: Mapped[str | None] = mapped_column(Text)

@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.config import edits_dir, get_settings
 from app.models import Track, TrackEdit
 from app.schemas import EditExport, EditList, EditSegment
+from app.services import edit_catalogue
 from app.services.media import _ffmpeg, _source
 
 CHANNELS = 2
@@ -127,8 +128,12 @@ def _reserve(stem: str, extension: str) -> Path:
     raise HTTPException(409, f"Too many edits of {stem} in {folder}")
 
 
-def export(track: Track, body: EditExport) -> tuple[Path, int]:
-    """Render the edit into a new file in EDITS_DIR, tags copied from the original. Returns (path, frames)."""
+def export(session: Session, track: Track, body: EditExport) -> tuple[Path, int, Track]:
+    """Render the edit into a new file in EDITS_DIR (tags copied from the original, title marked as an
+    edit) and add it to the catalogue with the DJ's preparation carried over.
+
+    Returns (path, frames, new catalogue track).
+    """
     _check_rate(track, body.edit)
     rate = body.edit.sample_rate
     audio = np.clip(render(decode(track), body.edit), -1, 1).astype(np.float32)
@@ -141,7 +146,8 @@ def export(track: Track, body: EditExport) -> tuple[Path, int]:
         "ffmpeg", "-v", "error", "-nostdin", "-y",
         "-f", "f32le", "-ar", str(rate), "-ac", str(CHANNELS), "-i", "pipe:0",
         "-i", str(_source(track)),
-        "-map", "0:a", "-map_metadata", "1", *codec, "-f", body.format, str(tmp),
+        "-map", "0:a", "-map_metadata", "1", "-metadata", f"title={_edited_title(track, target)}",
+        *codec, "-f", body.format, str(tmp),
     ]  # fmt: skip
     try:
         subprocess.run(command, input=audio.tobytes(), capture_output=True, check=True, timeout=600)
@@ -150,4 +156,10 @@ def export(track: Track, body: EditExport) -> tuple[Path, int]:
         tmp.unlink(missing_ok=True)
         target.unlink(missing_ok=True)  # our own empty placeholder, not a library file
         raise HTTPException(500, f"ffmpeg failed: {exc.stderr.decode(errors='replace')[:300]}") from exc
-    return target, len(audio)
+    return target, len(audio), edit_catalogue.register(session, track, target, body.edit)
+
+
+def _edited_title(track: Track, target: Path) -> str:
+    """ "Title (Edited 2)": the original title plus the suffix of the file name chosen by `_reserve`."""
+    suffix = target.stem[len(Path(track.filename).stem.replace(os.sep, "_")) :].strip()
+    return f"{track.title or Path(track.filename).stem} {suffix}"

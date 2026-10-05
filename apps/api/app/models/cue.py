@@ -37,6 +37,8 @@ class Cue(Base):
     bar: Mapped[int] = mapped_column(Integer)
     beat: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     color: Mapped[str | None] = mapped_column(Text)
+    # A loop (Rekordbox POSITION_MARK Type 4): its length in beats. None = a cue point.
+    loop_beats: Mapped[Decimal | None] = mapped_column(Numeric(6, 3))
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
     source: Mapped[str] = mapped_column(Text)
     approved: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

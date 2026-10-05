@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from app.db import get_session
 from app.models import Beatgrid
 from app.routes.tracks import get_track
-from app.schemas import ApplyAnalysis, ShiftDownbeat, TrackAnalysis, TrackOut
-from app.services import analysis
+from app.schemas import ApplyAnalysis, BeatgridUpdate, SectionsUpdate, ShiftDownbeat, TrackAnalysis, TrackOut
+from app.services import analysis, tempo
 
 router = APIRouter(tags=["analysis"])
 
@@ -66,6 +66,38 @@ def shift_downbeat(track_id: uuid.UUID, body: ShiftDownbeat, session: Session = 
     if session.get(Beatgrid, track_id) is None:
         raise HTTPException(409, "Analyse the track before adjusting its beatgrid")
     analysis.shift_downbeat(session, track, body.beats)
+    session.commit()
+    return analysis_view(session, track_id)
+
+
+@router.put("/tracks/{track_id}/beatgrid", response_model=TrackAnalysis)
+def set_beatgrid(
+    track_id: uuid.UUID,
+    body: BeatgridUpdate,
+    background: BackgroundTasks,
+    session: Session = Depends(get_session),
+):
+    """The DJ's beatgrid: one anchor = constant tempo, more = tempo changes. Survives re-analysis."""
+    track = get_track(session, track_id)
+    analysis.set_grid(session, track, [tempo.Anchor(a.time, a.bpm, a.beat) for a in body.anchors])
+    session.commit()
+    background.add_task(analysis.refresh_live_xml_now)
+    return analysis_view(session, track_id)
+
+
+@router.put("/tracks/{track_id}/sections", response_model=TrackAnalysis)
+def set_sections(track_id: uuid.UUID, body: SectionsUpdate, session: Session = Depends(get_session)):
+    """The DJ's sections replace the detected ones (kept, see DELETE) for display and cue suggestions."""
+    track = get_track(session, track_id)
+    analysis.set_sections(session, track, [s.model_dump() for s in body.sections])
+    session.commit()
+    return analysis_view(session, track_id)
+
+
+@router.delete("/tracks/{track_id}/sections", response_model=TrackAnalysis)
+def restore_sections(track_id: uuid.UUID, session: Session = Depends(get_session)):
+    """Back to the detected sections."""
+    analysis.restore_sections(session, get_track(session, track_id))
     session.commit()
     return analysis_view(session, track_id)
 

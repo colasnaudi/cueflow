@@ -1,4 +1,5 @@
 import hashlib
+import json
 import subprocess
 from pathlib import Path
 
@@ -129,14 +130,15 @@ def test_export_writes_a_new_file_and_never_overwrites(client, track_id, library
     assert sorted(p.name for p in edits.iterdir()) == ["a (Edited 2).wav", "a (Edited).mp3", "a (Edited).wav"]
 
 
-def test_export_keeps_the_original_tags(client, track_id, edits):
+def test_export_keeps_the_original_tags_and_marks_the_title(client, track_id, edits):
     body = {"edit": edit(seg(0, 44_100)), "format": "mp3", "quality": 192}
     path = client.post(f"/tracks/{track_id}/edit/export", json=body).json()["path"]
     out = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format_tags=title", "-of", "csv=p=0", path],
+        ["ffprobe", "-v", "error", "-show_entries", "format_tags=title,artist", "-of", "json", path],
         capture_output=True, text=True, check=True,
     )  # fmt: skip
-    assert out.stdout.strip() == "Jetsetter"
+    tags = {k.lower(): v for k, v in json.loads(out.stdout)["format"]["tags"].items()}
+    assert tags == {"title": "Jetsetter (Edited)", "artist": "Walker & Royce/Life on Planets"}
 
 
 def test_export_quality_must_match_the_format(client, track_id, edits):

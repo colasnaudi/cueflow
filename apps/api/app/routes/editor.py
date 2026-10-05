@@ -55,7 +55,11 @@ def edit_source(track_id: uuid.UUID, session: Session = Depends(get_session)):
 def export_edit(track_id: uuid.UUID, body: EditExport, session: Session = Depends(get_session)):
     """Render the edit into a new file in EDITS_DIR. The original is only read, never overwritten."""
     track = get_track(session, track_id)
-    path, frames = editor.export(track, body)
+    path, frames, new = editor.export(session, track, body)
+    session.commit()
     return EditExportResult(
-        path=str(path), filename=path.name, duration_ms=round(frames * 1000 / body.edit.sample_rate)
+        path=str(path),
+        filename=path.name,
+        duration_ms=round(frames * 1000 / body.edit.sample_rate),
+        track_id=new.id,
     )

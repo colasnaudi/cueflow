@@ -30,6 +30,7 @@ class TrackOut(BaseModel):
     musical_key: str | None
     camelot_key: str | None
     key_source: str | None
+    edited_from: uuid.UUID | None = None
     bitrate: int | None
     sample_rate: int | None
     rating: int
@@ -193,6 +194,14 @@ class TrashResult(BaseModel):
     errors: list[str]
 
 
+class Anchor(BaseModel):
+    """From `time` on, beats every 60/`bpm` s; the beat at `time` is beat `beat` (1-4) of its bar."""
+
+    time: float = Field(ge=0, le=24 * 3600)
+    bpm: float = Field(ge=40, le=250)
+    beat: int = Field(ge=1, le=4)
+
+
 class BeatgridOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -203,6 +212,20 @@ class BeatgridOut(BaseModel):
     grid_confidence: float | None
     downbeat_confidence: float | None
     source: str
+    # Tempo changes; None = constant grid.
+    anchors: list[Anchor] | None = None
+
+
+class BeatgridUpdate(BaseModel):
+    anchors: list[Anchor] = Field(min_length=1, max_length=64)
+
+    @field_validator("anchors")
+    @classmethod
+    def distinct_times(cls, anchors: list[Anchor]) -> list[Anchor]:
+        times = sorted(a.time for a in anchors)
+        if any(b - a < 0.1 for a, b in zip(times, times[1:], strict=False)):
+            raise ValueError("two tempo changes cannot be less than 0.1 s apart")
+        return anchors
 
 
 class SectionOut(BaseModel):
@@ -215,6 +238,41 @@ class SectionOut(BaseModel):
     end_beat: int
     confidence: float | None
     source: str
+    label: str | None = None
+    color: str | None = None
+
+
+SectionType = Literal[
+    "INTRO", "GROOVE", "VERSE", "BUILD", "DROP", "BREAK", "CHORUS", "BRIDGE", "OUTRO", "CUSTOM"
+]
+Color = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+
+
+class SectionIn(BaseModel):
+    type: SectionType
+    label: str | None = Field(default=None, max_length=40)
+    color: str | None = Color
+    start_bar: int = Field(ge=-64, le=10_000)
+    start_beat: int = Field(default=0, ge=0, le=3)
+    end_bar: int = Field(ge=-64, le=10_000)
+    end_beat: int = Field(default=0, ge=0, le=3)
+
+
+class SectionsUpdate(BaseModel):
+    sections: list[SectionIn] = Field(min_length=1, max_length=200)
+
+    @field_validator("sections")
+    @classmethod
+    def ordered(cls, sections: list[SectionIn]) -> list[SectionIn]:
+        previous_end = None
+        for s in sections:
+            start, end = s.start_bar * 4 + s.start_beat, s.end_bar * 4 + s.end_beat
+            if end <= start:
+                raise ValueError("a section must end after it starts")
+            if previous_end is not None and start < previous_end:
+                raise ValueError("sections must be in order and must not overlap")
+            previous_end = end
+        return sections
 
 
 class TrackAnalysis(BaseModel):
@@ -251,6 +309,7 @@ class CueOut(BaseModel):
     source: str
     approved: bool
     approved_by: str | None
+    loop_beats: float | None = None
 
 
 class RekordboxExport(BaseModel):
@@ -333,3 +392,53 @@ class EditExportResult(BaseModel):
     path: str
     filename: str
     duration_ms: int
+    # The catalogue track created for the exported file (cues, grid and sections carried over).
+    track_id: uuid.UUID
+
+
+class CueCreate(BaseModel):
+    type: Literal["HOT", "MEMORY"]
+    bar: int = Field(ge=-64, le=10_000)
+    beat: int = Field(default=0, ge=0, le=3)
+    label: str | None = Field(default=None, max_length=40)
+    color: str | None = Color
+    # A loop: its length in beats (1/16 to 512).
+    loop_beats: float | None = Field(default=None, ge=0.0625, le=512)
+    # Hot cues only: A-H (default: the first free one).
+    slot: str | None = Field(default=None, pattern="^[A-H]$")
+
+
+class CueUpdate(BaseModel):
+    bar: int | None = Field(default=None, ge=-64, le=10_000)
+    beat: int | None = Field(default=None, ge=0, le=3)
+    label: str | None = Field(default=None, max_length=40)
+    color: str | None = Color
+    loop_beats: float | None = Field(default=None, ge=0.0625, le=512)
+    slot: str | None = Field(default=None, pattern="^[A-H]$")
+
+
+AnnotationKind = Literal["NOTE", "DROP", "VOCAL", "WARNING", "FIRE"]
+
+
+class AnnotationIn(BaseModel):
+    bar: int = Field(ge=-64, le=10_000)
+    beat: int = Field(default=0, ge=0, le=3)
+    kind: AnnotationKind = "NOTE"
+    text: str = Field(default="", max_length=200)
+
+
+class AnnotationUpdate(BaseModel):
+    bar: int | None = Field(default=None, ge=-64, le=10_000)
+    beat: int | None = Field(default=None, ge=0, le=3)
+    kind: AnnotationKind | None = None
+    text: str | None = Field(default=None, max_length=200)
+
+
+class AnnotationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    bar: int
+    beat: int
+    kind: str
+    text: str

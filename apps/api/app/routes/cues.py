@@ -1,14 +1,14 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import get_session
 from app.routes.tracks import get_track
-from app.schemas import CueOut, ExportPreview, LiveXml, RekordboxExport
+from app.schemas import CueCreate, CueOut, CueUpdate, ExportPreview, LiveXml, RekordboxExport
 from app.services import analysis, cues, rekordbox
 
 router = APIRouter(tags=["cues"])
@@ -35,6 +35,41 @@ def regenerate_cues(track_id: uuid.UUID, session: Session = Depends(get_session)
         raise HTTPException(409, "Analyse the track before generating cues")
     analysis.regenerate_cues(session, track)
     session.commit()
+    return cues.cues_of(session, track_id)
+
+
+@router.post("/tracks/{track_id}/cues", response_model=list[CueOut], status_code=201)
+def create_cue(
+    track_id: uuid.UUID, body: CueCreate, background: BackgroundTasks, session: Session = Depends(get_session)
+):
+    """A hot cue, memory cue or loop placed by the DJ at a musical position."""
+    track = get_track(session, track_id)
+    try:
+        cues.create(session, track, body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    session.commit()
+    background.add_task(analysis.refresh_live_xml_now)
+    return cues.cues_of(session, track_id)
+
+
+@router.patch("/tracks/{track_id}/cues/{cue_id}", response_model=list[CueOut])
+def edit_cue(
+    track_id: uuid.UUID,
+    cue_id: uuid.UUID,
+    body: CueUpdate,
+    background: BackgroundTasks,
+    session: Session = Depends(get_session),
+):
+    track = get_track(session, track_id)
+    try:
+        cue = cues.edit(session, track, cue_id, body.model_dump(exclude_unset=True))
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if cue is None:
+        raise HTTPException(404, "Cue not found")
+    session.commit()
+    background.add_task(analysis.refresh_live_xml_now)
     return cues.cues_of(session, track_id)
 
 

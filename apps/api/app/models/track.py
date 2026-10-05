@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, DateTime, Index, Integer, Numeric, Text, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, Numeric, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -43,6 +43,8 @@ class Track(Base):
 
     rating: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     rating_source: Mapped[str | None] = mapped_column(Text)  # TAG | REKORDBOX | USER
+    # An edit exported from the audio editor: the track it was made from.
+    edited_from: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tracks.id", ondelete="SET NULL"))
 
     file_hash: Mapped[str] = mapped_column(Text, index=True)
     # Size + mtime let a rescan skip unchanged files without re-hashing them.

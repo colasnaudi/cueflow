@@ -22,6 +22,11 @@ COLORS = {
     "DROP": "#E62828",
     "VOCAL": "#FFD300",
     "OUTRO": "#8C8C8C",
+    # Section types the DJ can choose in the editor.
+    "VERSE": "#305AFF",
+    "CHORUS": "#FFD300",
+    "BRIDGE": "#AA72FF",
+    "CUSTOM": "#8C8C8C",
 }
 
 
@@ -85,10 +90,10 @@ def plan_cues(sections: Sequence, vocal_curve: Sequence[float] = ()) -> list[Pla
             PlannedCue(
                 f"M{index:02d}",
                 "MEMORY",
-                section.type,
+                getattr(section, "label", None) or section.type,
                 section.start_bar,
                 section.start_beat,
-                COLORS[section.type],
+                getattr(section, "color", None) or COLORS.get(section.type, COLORS["CUSTOM"]),
                 round(float(section.confidence or 0.5), 3),
             )
         )
