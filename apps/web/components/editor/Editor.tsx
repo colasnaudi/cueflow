@@ -1,6 +1,6 @@
 "use client";
 
-import type { EditExportFormat, EditExportRequest, Track } from "@cueflow/types";
+import type { Anchor, EditExportFormat, EditExportRequest, Track } from "@cueflow/types";
 import {
   ArrowLeft,
   ClipboardPaste,
@@ -25,8 +25,19 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 
-import { EditorWaveform, type WaveformHandle } from "@/components/editor/EditorWaveform";
-import { KeyBadge } from "@/components/library/KeyBadge";
+import { DjOverlay } from "@/components/editor/DjOverlay";
+import {
+  CuePanel,
+  GridPanel,
+  LoopPanel,
+  NotePanel,
+  type PanelContext,
+  SectionPanel,
+  addCue,
+  addNote,
+  movedBoundary,
+} from "@/components/editor/DjPanels";
+import { type BeatLine, EditorWaveform, type WaveformHandle } from "@/components/editor/EditorWaveform";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { api } from "@/lib/api";
@@ -40,6 +51,7 @@ import {
   identityEdit,
   isIdentity,
   normalizeGain,
+  occurrences,
   pasteAt,
   peakOf,
   renderEdit,
@@ -52,8 +64,23 @@ import {
 } from "@/lib/editor";
 import type { EditorEngine } from "@/lib/editor-audio";
 import { useEditor } from "@/lib/editor-store";
+import { CAMELOT_KEYS, useDjPrep } from "@/lib/dj-prep";
+import { useTrackMutations } from "@/lib/mutations";
+import { TempoMap, anchorsOf } from "@/lib/tempo";
 import { formatBpm, trackTitle } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+type Tab = "edit" | "grid" | "cues" | "loops" | "sections" | "notes";
+const TABS: [Tab, string][] = [
+  ["edit", "Edit"],
+  ["grid", "Beatgrid"],
+  ["cues", "Cues"],
+  ["loops", "Loops"],
+  ["sections", "Sections"],
+  ["notes", "Notes"],
+];
+/** The grid is saved this long after the last change (BPM clicks, nudges). */
+const GRID_SAVE_DELAY_MS = 400;
 
 const QUALITIES: Record<EditExportFormat, EditExportRequest["quality"][]> = { wav: [16, 24], mp3: [320, 256, 192] };
 const GAIN_SLIDER_DB = 12;
@@ -137,6 +164,70 @@ export function Editor({ track, original, engine }: EditorProps) {
   const editing = state.side === "B";
   const playhead = useCallback(() => Math.round(engine.position * rate), [engine, rate]);
   const getPosition = useCallback(() => engine.position, [engine]);
+
+  // --- DJ preparation: it belongs to the original; on B it is shown wherever that audio is heard. ---
+  const prep = useDjPrep(track.id);
+  const { update: updateTrack } = useTrackMutations(track.id);
+  const [tab, setTab] = useState<Tab>("edit");
+  const [selectedSection, setSelectedSection] = useState<number | null>(null);
+  const [loopLength, setLoopLength] = useState(4);
+  const [taps, setTaps] = useState<number[]>([]);
+  const [gridDraft, setGridDraft] = useState<Anchor[] | null>(null);
+  const gridTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const serverGrid = prep.analysis?.beatgrid;
+  const anchors = useMemo(() => gridDraft ?? (serverGrid ? anchorsOf(serverGrid) : null), [gridDraft, serverGrid]);
+  const tempo = useMemo(() => (anchors ? new TempoMap(anchors) : null), [anchors]);
+  const sections = prep.analysis?.sections ?? [];
+
+  const editGrid = (next: Anchor[]) => {
+    setGridDraft(next);
+    clearTimeout(gridTimer.current);
+    gridTimer.current = setTimeout(
+      () => prep.saveGrid.mutate(next, { onSettled: () => setGridDraft((d) => (d === next ? null : d)) }),
+      GRID_SAVE_DELAY_MS,
+    );
+  };
+  useEffect(() => () => clearTimeout(gridTimer.current), []);
+
+  /** Display frames (on the side being heard) of an original time. */
+  const display = useCallback(
+    (seconds: number) => (editing && edit ? occurrences(edit, Math.round(seconds * rate)) : [seconds * rate]),
+    [editing, edit, rate],
+  );
+  const toSeconds = useCallback(
+    (frame: number) => (editing && edit ? toSource(edit, Math.round(frame)) : frame) / rate,
+    [editing, edit, rate],
+  );
+  const beats = useMemo<BeatLine[]>(() => {
+    if (!tempo) return [];
+    return tempo
+      .beatsBetween(0, original.duration)
+      .flatMap((b) => display(b.time).map((frame) => ({ frame, downbeat: b.index % 4 === 0 })));
+  }, [tempo, original.duration, display]);
+
+  const ctx: PanelContext = {
+    prep,
+    tempo,
+    now: () => toSeconds(engine.position * rate),
+    here: () => tempo?.positionOf(toSeconds(engine.position * rate)) ?? { bar: 0, beat: 0 },
+    seek: (seconds) => {
+      const [frame] = editing && edit ? [...occurrences(edit, Math.round(seconds * rate)), toEdited(edit, Math.round(seconds * rate))] : [seconds * rate];
+      engine.seek(frame / rate);
+      waveform.current?.reveal(frame);
+    },
+    playLoop: (start, end) => {
+      const [frame] = display(start);
+      if (frame === undefined) return void toast.info("This loop was cut out of the edit");
+      const from = frame / rate;
+      engine.setLoop(true);
+      engine.play(from, { start: from, end: from + end - start });
+      waveform.current?.reveal(frame);
+    },
+  };
+  const tap = () => {
+    const now = performance.now();
+    setTaps((list) => (list.length && now - list.at(-1)! > 2000 ? [now] : [...list, now]));
+  };
 
   /** Run an edit operation on the edited side; errors (empty edit, too many fades) become toasts. */
   const run = (operation: () => void) => {
@@ -294,7 +385,11 @@ export function Editor({ track, original, engine }: EditorProps) {
     try {
       const result = await api.exportEdit(track.id, { edit, format, quality });
       setExportOpen(false);
-      toast.success(`Exported ${result.filename}`, { description: result.path, duration: 10_000 });
+      toast.success(`Exported ${result.filename} — added to the library`, {
+        description: `${result.path} · cues, grid and sections carried over`,
+        duration: 10_000,
+        action: { label: "Open", onClick: () => router.push(`/tracks/${result.track_id}`) },
+      });
     } catch (error) {
       toast.error(`Export failed: ${(error as Error).message}`);
     } finally {
@@ -312,6 +407,13 @@ export function Editor({ track, original, engine }: EditorProps) {
     select,
     length: rendered?.buffer.length ?? 0,
     zoom: (factor: number) => waveform.current?.zoom(factor, playhead()),
+    dj: {
+      hotCue: () => addCue(ctx, "HOT"),
+      memoryCue: () => addCue(ctx, "MEMORY"),
+      note: () => addNote(ctx),
+      loop: () => addCue(ctx, "MEMORY", { loop_beats: loopLength }),
+      tap,
+    },
   };
   const handlers = useRef(keys);
   useEffect(() => {
@@ -343,6 +445,11 @@ export function Editor({ track, original, engine }: EditorProps) {
         "+": () => h.zoom(2),
         "=": () => h.zoom(2),
         "-": () => h.zoom(0.5),
+        c: h.dj.hotCue,
+        m: h.dj.memoryCue,
+        n: h.dj.note,
+        l: h.dj.loop,
+        t: h.dj.tap,
       };
       const key = event.key.toLowerCase();
       const handler = event.metaKey || event.ctrlKey ? commands[key] : plain[key];
@@ -444,8 +551,23 @@ export function Editor({ track, original, engine }: EditorProps) {
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-6 py-4">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1 font-mono text-sm tabular-nums">
-          <span>{formatBpm(track.bpm)} BPM</span>
-          <KeyBadge camelot={track.camelot_key} />
+          <span title={tempo && tempo.anchors.length > 1 ? "Tempo changes: see Beatgrid" : undefined}>
+            {formatBpm(track.bpm)} BPM{tempo && tempo.anchors.length > 1 && "*"}
+          </span>
+          <select
+            aria-label="Key"
+            title="Correct the key (your choice is kept)"
+            value={track.camelot_key ?? ""}
+            onChange={(event) => updateTrack.mutate({ musical_key: event.target.value })}
+            className="h-7 rounded border border-border bg-background px-1 font-mono text-sm"
+          >
+            {!track.camelot_key && <option value="">Key?</option>}
+            {CAMELOT_KEYS.map(([camelot, name]) => (
+              <option key={camelot} value={camelot}>
+                {camelot} · {name}
+              </option>
+            ))}
+          </select>
           <span className="text-muted-foreground">
             {clock(original.duration)}
             {editLength(edit) !== original.length && <span className="text-foreground"> → {clock(editLength(edit) / rate)}</span>}
@@ -471,62 +593,126 @@ export function Editor({ track, original, engine }: EditorProps) {
             playing={state.playing}
             onSeek={(frame) => engine.seek(frame / rate)}
             onSelect={select}
+            height={250}
+            beats={beats}
+            overlay={(geometry) =>
+              tempo && (
+                <DjOverlay
+                  geometry={geometry}
+                  tempo={tempo}
+                  rate={rate}
+                  display={display}
+                  toSeconds={toSeconds}
+                  cues={prep.cues}
+                  notes={prep.notes}
+                  sections={sections}
+                  selectedSection={selectedSection}
+                  onMoveCue={(cue, to) => prep.editCue.mutate({ id: cue.id, changes: to })}
+                  onResizeLoop={(cue, _from, loopBeats) => prep.editCue.mutate({ id: cue.id, changes: { loop_beats: loopBeats } })}
+                  onMoveNote={(note, to) => prep.editNote.mutate({ id: note.id, changes: to })}
+                  onMoveBoundary={(index, to) => {
+                    const next = movedBoundary(sections, index, to);
+                    if (next) prep.saveSections.mutate(next);
+                    else toast.info("A section needs at least one beat");
+                  }}
+                  onSelectSection={(index) => {
+                    setSelectedSection(index);
+                    setTab("sections");
+                  }}
+                  onSeek={(frame) => engine.seek(frame / rate)}
+                />
+              )
+            }
           />
         </section>
 
-        <section className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Tool label="Cut" shortcut="⌘X" disabled={!editing} onClick={actions.cut}>
-              <Scissors />
-            </Tool>
-            <Tool label="Copy" shortcut="⌘C" disabled={!editing} onClick={actions.copy}>
-              <Copy />
-            </Tool>
-            <Tool label="Paste" shortcut="⌘V" disabled={!editing || !clipboard} onClick={actions.paste}>
-              <ClipboardPaste />
-            </Tool>
-            <Tool label="Duplicate" shortcut="⌘D" disabled={!editing} onClick={actions.duplicate}>
-              <CopyPlus />
-            </Tool>
-            <Tool label="Split" shortcut="at the playhead" disabled={!editing} onClick={actions.split}>
-              <SquareSplitHorizontal />
-            </Tool>
-            <Tool label="Trim" shortcut="keep the selection" disabled={!editing} onClick={actions.trim} />
-            <Tool label="Delete" shortcut="⌫" disabled={!editing} onClick={actions.remove}>
-              <Trash2 />
-            </Tool>
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Tool label="Fade in" disabled={!editing} onClick={() => actions.fade("in")} />
-            <Tool label="Fade out" disabled={!editing} onClick={() => actions.fade("out")} />
-            <Tool label="Normalize" shortcut="peak to −1 dBFS" disabled={!editing} onClick={actions.normalize} />
-            <div className="ml-4 flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Gain</span>
-              <span className="font-mono text-xs text-muted-foreground">−{GAIN_SLIDER_DB}</span>
-              <input
-                type="range"
-                min={-GAIN_SLIDER_DB}
-                max={GAIN_SLIDER_DB}
-                step={0.1}
-                value={Math.max(-GAIN_SLIDER_DB, Math.min(GAIN_SLIDER_DB, gainDb))}
-                disabled={!editing}
-                onChange={(event) => actions.gain(Number(event.target.value))}
-                onDoubleClick={() => actions.gain(0)}
-                className="w-48 accent-primary"
-                aria-label="Gain"
-              />
-              <span className="font-mono text-xs text-muted-foreground">+{GAIN_SLIDER_DB}</span>
-              <span className={cn("w-16 text-right font-mono text-xs tabular-nums", gainDb !== 0 && "text-primary")}>
-                {gainDb > 0 ? "+" : ""}
-                {gainDb.toFixed(1)} dB
-              </span>
-              <Button variant="ghost" size="xs" disabled={!editing || gainDb === 0} onClick={() => actions.gain(0)}>
-                0 dB
-              </Button>
-              {editing && rendered.peak * 10 ** (gainDb / 20) > 1 && <span className="text-xs text-destructive">clipping</span>}
+        <nav className="flex gap-1 border-b border-border">
+          {TABS.map(([value, name]) => (
+            <button
+              type="button"
+              key={value}
+              onClick={() => setTab(value)}
+              className={cn(
+                "-mb-px border-b-2 px-3 py-1.5 text-sm",
+                tab === value ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {name}
+            </button>
+          ))}
+          <span className="ml-auto self-center text-xs text-muted-foreground">
+            C hot cue · M memory cue · L loop · N note · T tap — placed on the beat
+          </span>
+        </nav>
+
+        {tab === "edit" && (
+          <section className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Tool label="Cut" shortcut="⌘X" disabled={!editing} onClick={actions.cut}>
+                <Scissors />
+              </Tool>
+              <Tool label="Copy" shortcut="⌘C" disabled={!editing} onClick={actions.copy}>
+                <Copy />
+              </Tool>
+              <Tool label="Paste" shortcut="⌘V" disabled={!editing || !clipboard} onClick={actions.paste}>
+                <ClipboardPaste />
+              </Tool>
+              <Tool label="Duplicate" shortcut="⌘D" disabled={!editing} onClick={actions.duplicate}>
+                <CopyPlus />
+              </Tool>
+              <Tool label="Split" shortcut="at the playhead" disabled={!editing} onClick={actions.split}>
+                <SquareSplitHorizontal />
+              </Tool>
+              <Tool label="Trim" shortcut="keep the selection" disabled={!editing} onClick={actions.trim} />
+              <Tool label="Delete" shortcut="⌫" disabled={!editing} onClick={actions.remove}>
+                <Trash2 />
+              </Tool>
             </div>
-          </div>
-        </section>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Tool label="Fade in" disabled={!editing} onClick={() => actions.fade("in")} />
+              <Tool label="Fade out" disabled={!editing} onClick={() => actions.fade("out")} />
+              <Tool label="Normalize" shortcut="peak to −1 dBFS" disabled={!editing} onClick={actions.normalize} />
+              <div className="ml-4 flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Gain</span>
+                <span className="font-mono text-xs text-muted-foreground">−{GAIN_SLIDER_DB}</span>
+                <input
+                  type="range"
+                  min={-GAIN_SLIDER_DB}
+                  max={GAIN_SLIDER_DB}
+                  step={0.1}
+                  value={Math.max(-GAIN_SLIDER_DB, Math.min(GAIN_SLIDER_DB, gainDb))}
+                  disabled={!editing}
+                  onChange={(event) => actions.gain(Number(event.target.value))}
+                  onDoubleClick={() => actions.gain(0)}
+                  className="w-48 accent-primary"
+                  aria-label="Gain"
+                />
+                <span className="font-mono text-xs text-muted-foreground">+{GAIN_SLIDER_DB}</span>
+                <span className={cn("w-16 text-right font-mono text-xs tabular-nums", gainDb !== 0 && "text-primary")}>
+                  {gainDb > 0 ? "+" : ""}
+                  {gainDb.toFixed(1)} dB
+                </span>
+                <Button variant="ghost" size="xs" disabled={!editing || gainDb === 0} onClick={() => actions.gain(0)}>
+                  0 dB
+                </Button>
+                {editing && rendered.peak * 10 ** (gainDb / 20) > 1 && <span className="text-xs text-destructive">clipping</span>}
+              </div>
+            </div>
+          </section>
+        )}
+        {tab === "grid" && <GridPanel ctx={ctx} anchors={anchors} onChange={editGrid} taps={taps} onTap={tap} />}
+        {tab === "cues" && <CuePanel ctx={ctx} />}
+        {tab === "loops" && <LoopPanel ctx={ctx} length={loopLength} onLength={setLoopLength} />}
+        {tab === "sections" && (
+          <SectionPanel
+            ctx={ctx}
+            sections={sections}
+            selected={selectedSection}
+            onSelect={setSelectedSection}
+            endOfTrack={tempo?.positionOf(original.duration) ?? { bar: 0, beat: 0 }}
+          />
+        )}
+        {tab === "notes" && <NotePanel ctx={ctx} />}
 
         <section className="flex items-center justify-center gap-2 border-t border-border pt-4">
           <Button variant="ghost" size="icon-sm" title="Start (Home)" onClick={transport.home}>

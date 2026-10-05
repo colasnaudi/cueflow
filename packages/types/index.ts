@@ -48,6 +48,8 @@ export interface Track {
   file_size: number;
   tags: Tag[];
   created_at: string;
+  /** Set on a file exported from the audio editor: the track it was made from. */
+  edited_from?: string | null;
 }
 
 export interface TrackPage {
@@ -215,9 +217,28 @@ export interface Beatgrid {
   grid_confidence: number | null;
   downbeat_confidence: number | null;
   source: "ANALYSIS" | "USER";
+  /** Tempo changes (Rekordbox TEMPO entries); null = the constant grid above. */
+  anchors: Anchor[] | null;
 }
 
-export type SectionType = "INTRO" | "GROOVE" | "BREAK" | "BUILD" | "DROP" | "OUTRO";
+/** From `time` (s) on, beats every 60 / bpm seconds; the beat at `time` is beat `beat` (1-4) of its bar. */
+export interface Anchor {
+  time: number;
+  bpm: number;
+  beat: number;
+}
+
+export type SectionType =
+  | "INTRO"
+  | "GROOVE"
+  | "VERSE"
+  | "BUILD"
+  | "DROP"
+  | "BREAK"
+  | "CHORUS"
+  | "BRIDGE"
+  | "OUTRO"
+  | "CUSTOM";
 
 /** A part of the track in musical positions: bars counted from bar 1 of the beatgrid (0-based, end exclusive). */
 export interface Section {
@@ -228,8 +249,17 @@ export interface Section {
   start_beat: number;
   end_beat: number;
   confidence: number | null;
+  /** AUDIO: detected; USER: set by you (they replace the detected ones until restored). */
   source: "AUDIO" | "USER";
+  label: string | null;
+  color: string | null;
 }
+
+/** What the editor sends for a section (PUT /tracks/{id}/sections). */
+export type SectionInput = Pick<Section, "type" | "start_bar" | "start_beat" | "end_bar" | "end_beat"> & {
+  label?: string | null;
+  color?: string | null;
+};
 
 export interface TrackAnalysis {
   beatgrid: Beatgrid | null;
@@ -249,7 +279,7 @@ export interface TrackAnalysis {
 /** A cue as a musical position (bar + beat, resolved with the beatgrid). */
 export interface Cue {
   id: string;
-  /** A-H for hot cues, M01... for memory cues. */
+  /** A-H for hot cues, M01... for generated memory cues, U01... for yours. */
   slot: string;
   type: "HOT" | "MEMORY";
   label: string | null;
@@ -261,7 +291,35 @@ export interface Cue {
   approved: boolean;
   /** AUTO: approved on generation (replaced by a re-analysis); USER: validated by you (kept). */
   approved_by: "AUTO" | "USER" | null;
+  /** A loop: its length in beats. */
+  loop_beats: number | null;
 }
+
+export interface CueInput {
+  type: "HOT" | "MEMORY";
+  bar: number;
+  beat: number;
+  label?: string | null;
+  color?: string | null;
+  loop_beats?: number | null;
+  /** Hot cues: A-H (default: the first free one). */
+  slot?: string;
+}
+
+export type CueChanges = Partial<Omit<CueInput, "type">>;
+
+export type AnnotationKind = "NOTE" | "DROP" | "VOCAL" | "WARNING" | "FIRE";
+
+/** A DJ note on the timeline (Cueflow only). */
+export interface Annotation {
+  id: string;
+  bar: number;
+  beat: number;
+  kind: AnnotationKind;
+  text: string;
+}
+
+export type AnnotationInput = Omit<Annotation, "id">;
 
 export interface ExportPreview {
   tracks: number;
@@ -343,4 +401,6 @@ export interface EditExportResult {
   path: string;
   filename: string;
   duration_ms: number;
+  /** The catalogue track created for the file (grid, cues and sections carried over). */
+  track_id: string;
 }

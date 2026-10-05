@@ -1,5 +1,10 @@
 import type {
+  Anchor,
+  Annotation,
+  AnnotationInput,
   AnalysisStatus,
+  CueChanges,
+  CueInput,
   Cue,
   DuplicateKind,
   EditExportRequest,
@@ -20,6 +25,7 @@ import type {
   TrashResult,
   Peaks,
   ScanStatus,
+  SectionInput,
   TagCount,
   Track,
   TrackAnalysis,
@@ -103,6 +109,22 @@ export const api = {
   approveCues: (id: string) => request<Cue[]>(`/tracks/${id}/cues/approve`, { method: "POST" }),
   regenerateCues: (id: string) => request<Cue[]>(`/tracks/${id}/cues/regenerate`, { method: "POST" }),
   deleteCue: (id: string, cueId: string) => request<Cue[]>(`/tracks/${id}/cues/${cueId}`, { method: "DELETE" }),
+  createCue: (id: string, body: CueInput) =>
+    request<Cue[]>(`/tracks/${id}/cues`, { method: "POST", body: JSON.stringify(body) }),
+  editCue: (id: string, cueId: string, changes: CueChanges) =>
+    request<Cue[]>(`/tracks/${id}/cues/${cueId}`, { method: "PATCH", body: JSON.stringify(changes) }),
+  saveBeatgrid: (id: string, anchors: Anchor[]) =>
+    request<TrackAnalysis>(`/tracks/${id}/beatgrid`, { method: "PUT", body: JSON.stringify({ anchors }) }),
+  saveSections: (id: string, sections: SectionInput[]) =>
+    request<TrackAnalysis>(`/tracks/${id}/sections`, { method: "PUT", body: JSON.stringify({ sections }) }),
+  restoreSections: (id: string) => request<TrackAnalysis>(`/tracks/${id}/sections`, { method: "DELETE" }),
+  annotations: (id: string) => request<Annotation[]>(`/tracks/${id}/annotations`),
+  createAnnotation: (id: string, body: AnnotationInput) =>
+    request<Annotation[]>(`/tracks/${id}/annotations`, { method: "POST", body: JSON.stringify(body) }),
+  editAnnotation: (id: string, annotationId: string, changes: Partial<AnnotationInput>) =>
+    request<Annotation[]>(`/tracks/${id}/annotations/${annotationId}`, { method: "PATCH", body: JSON.stringify(changes) }),
+  deleteAnnotation: (id: string, annotationId: string) =>
+    request<Annotation[]>(`/tracks/${id}/annotations/${annotationId}`, { method: "DELETE" }),
   exportPreview: (folder: string | undefined, approvedOnly: boolean) =>
     request<ExportPreview>(`/export/rekordbox/preview?${toSearchParams({ folder, approved_only: approvedOnly })}`),
   /** Downloads the rekordbox.xml through the browser. */

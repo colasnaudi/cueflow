@@ -11,6 +11,24 @@ export interface WaveformHandle {
   reveal: (frame: number) => void;
 }
 
+/** What an overlay needs to place things on the waveform. */
+export interface WaveGeometry {
+  /** CSS x (px, relative to the waveform box) of an edited/display frame. */
+  xOf: (frame: number) => number;
+  /** Display frame under a pointer event on an element inside the waveform. */
+  frameAt: (event: { clientX: number; currentTarget: Element }) => number;
+  width: number;
+  height: number;
+  /** Top of the waveform area (below the ruler). */
+  top: number;
+}
+
+/** A beat line: downbeats are drawn stronger. */
+export interface BeatLine {
+  frame: number;
+  downbeat: boolean;
+}
+
 interface EditorWaveformProps {
   ref?: React.Ref<WaveformHandle>;
   buffer: AudioBuffer;
@@ -28,6 +46,9 @@ interface EditorWaveformProps {
   onSeek: (frame: number) => void;
   onSelect: (range: FrameRange | null) => void;
   height?: number;
+  beats?: BeatLine[];
+  /** Drawn over the waveform (pointer events only on what opts in). */
+  overlay?: (geometry: WaveGeometry) => React.ReactNode;
 }
 
 const RULER = 18;
@@ -103,6 +124,8 @@ export function EditorWaveform({
   onSeek,
   onSelect,
   height = 220,
+  beats,
+  overlay: renderOverlay,
 }: EditorWaveformProps) {
   const box = useRef<HTMLDivElement>(null);
   const base = useRef<HTMLCanvasElement>(null);
@@ -160,6 +183,19 @@ export function EditorWaveform({
 
   const waveHeight = height - RULER;
 
+  const frameAtClient = useCallback(
+    (event: { clientX: number; currentTarget: Element }) => {
+      const left = event.currentTarget.closest("[data-wave-box]")?.getBoundingClientRect().left ?? 0;
+      return view ? Math.max(0, Math.min(length, view.start + (event.clientX - left) * view.fpp)) : 0;
+    },
+    [view, length],
+  );
+  const geometry = useMemo<WaveGeometry | null>(
+    () =>
+      view && { xOf: (frame) => (frame - view.start) / view.fpp, frameAt: frameAtClient, width, height, top: RULER },
+    [view, frameAtClient, width, height],
+  );
+
   // Base layer: ruler, selection, waveform, segment joins.
   useEffect(() => {
     const canvas = base.current;
@@ -207,6 +243,18 @@ export function EditorWaveform({
       ctx.setLineDash([]);
     }
 
+    if (beats?.length) {
+      const beatGap = (beats.length > 1 ? Math.abs(beats[1].frame - beats[0].frame) : Infinity) / view.fpp;
+      for (const line of beats) {
+        if (!line.downbeat && beatGap < 6) continue; // too dense: bars only
+        if (line.downbeat && beatGap * 4 < 6) continue;
+        const x = Math.round(xOf(line.frame)) + 0.5;
+        if (x < 0 || x > width) continue;
+        ctx.fillStyle = line.downbeat ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.12)";
+        ctx.fillRect(x - 0.5, RULER, 1, waveHeight);
+      }
+    }
+
     // Ruler: the smallest step leaving ~90 px between labels.
     const secondsPerPx = view.fpp / rate;
     const step = TICKS.find((t) => t / secondsPerPx >= 90) ?? 300;
@@ -220,7 +268,7 @@ export function EditorWaveform({
       ctx.fillText(label(t, step), x + 3, 2);
     }
     ctx.fillRect(0, RULER - 1, width, 1);
-  }, [buffer, blocks, gain, editable, selection, boundaries, view, width, height, waveHeight, length, rate]);
+  }, [buffer, blocks, gain, editable, selection, boundaries, view, width, height, waveHeight, length, rate, beats]);
 
   // Overview: the whole track and the visible window.
   useEffect(() => {
@@ -347,7 +395,7 @@ export function EditorWaveform({
 
   return (
     <div className="flex flex-col gap-2">
-      <div ref={box} className="relative w-full select-none" style={{ height }}>
+      <div ref={box} data-wave-box className="relative w-full select-none" style={{ height }}>
         <canvas ref={base} className="absolute inset-0 h-full w-full" />
         <canvas
           ref={overlay}
@@ -357,6 +405,11 @@ export function EditorWaveform({
           onPointerUp={onPointerUp}
           onDoubleClick={onDoubleClick}
         />
+        {view && renderOverlay && (
+          <div className="pointer-events-none absolute inset-0 overflow-hidden">
+            {geometry && renderOverlay(geometry)}
+          </div>
+        )}
       </div>
       <canvas
         ref={overview}

@@ -216,3 +216,14 @@ export function summarize(buffer: AudioBuffer): Float32Array {
   }
   return blocks;
 }
+
+/** Every edited-timeline frame where original frame `frame` is heard (a duplicated part is heard twice). */
+export function occurrences(edit: EditList, frame: number): number[] {
+  const result: number[] = [];
+  let position = 0;
+  for (const segment of edit.segments) {
+    if (frame >= segment.start && frame < segment.end) result.push(position + frame - segment.start);
+    position += segment.end - segment.start;
+  }
+  return result;
+}

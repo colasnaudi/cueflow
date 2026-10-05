@@ -70,6 +70,17 @@ The current runtime implements the library-management MVP plus genre review and 
 * Audio editor V1 (`/tracks/{id}/edit`): cut/copy/paste/duplicate/delete/trim/split, fades, gain, normalize,
   undo/redo, A/B, saved working edit (edit list in `track_edits`), export as a new file in `EDITS_DIR` —
   the original is only read, an existing file is never overwritten
+* Editor V2 lot 1 — DJ preparation in the editor tabs (Beatgrid, Cues, Loops, Sections, Notes):
+  * variable beatgrid: anchors `{time, bpm, beat}` (= Rekordbox TEMPO entries) in `beatgrids.anchors`, resolved by
+    `services/tempo.py` / `apps/web/lib/tempo.ts` (keep both in sync); BPM ±, ×2/÷2, nudge, bar 1 here, tap,
+    tempo changes. A grid edited in Cueflow (source USER) is exported even over the DJ's Rekordbox grid
+  * hot/memory cues placed (C/M, quantized to the beat), dragged, renamed, recoloured; DJ memory cues use slots U##
+  * loops = cues with `loop_beats` (Rekordbox POSITION_MARK Type 4 with End)
+  * DJ sections (source USER, label, colour, types incl. VERSE/CHORUS/BRIDGE/CUSTOM) take precedence over the
+    detected ones (kept, restorable) and drive cue suggestions
+  * notes (`annotations` table), Cueflow only; key correction from the editor header
+  * user decision (2026-10-05): an exported edit joins the catalogue (`tracks.edited_from`) with its grid, cues,
+    loops, sections and notes carried through the edit list; it is in the "Edits" playlist of the XML
 * Duplicate detection
 * Probable duplicate detection
 * Short-track cleanup
@@ -79,7 +90,8 @@ The current runtime implements the library-management MVP plus genre review and 
 
 These are roadmap items, not current runtime capabilities:
 
-* Cue editor (moving a cue on the waveform)
+* Editor V2 lot 2: EQ, filters, compressor, limiter, echo/reverb/delay, pitch shift, time stretch, presets
+* Editor V2 lot 3: analysis suggestions (accept/ignore), batch processing
 * Ollama classification
 * Ollama embeddings
 * Semantic search
@@ -463,12 +475,22 @@ GET    /tracks/{id}/analysis
 POST   /tracks/{id}/analysis
 POST   /tracks/{id}/analysis/apply
 POST   /tracks/{id}/beatgrid/shift
+PUT    /tracks/{id}/beatgrid
+PUT    /tracks/{id}/sections
+DELETE /tracks/{id}/sections
+
+GET    /tracks/{id}/annotations
+POST   /tracks/{id}/annotations
+PATCH  /tracks/{id}/annotations/{annotation_id}
+DELETE /tracks/{id}/annotations/{annotation_id}
 
 GET    /analysis/audio
 POST   /analysis/audio
 POST   /analysis/audio/stop
 
 GET    /tracks/{id}/cues
+POST   /tracks/{id}/cues
+PATCH  /tracks/{id}/cues/{cue_id}
 POST   /tracks/{id}/cues/approve
 POST   /tracks/{id}/cues/regenerate
 DELETE /tracks/{id}/cues/{cue_id}

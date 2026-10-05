@@ -32,8 +32,10 @@ review and cleanup tools:
 | BPM, beatgrid, bar 1, key, energy, structure and vocals from audio | Available (MVP 0.2) |
 | Ollama classification, embeddings and cue suggestions | Planned for MVP 0.3 |
 | Hot/memory cue suggestions and Rekordbox XML export | Available |
-| Cue editor and Rekordbox XML import | Planned for MVP 0.4 |
+| Cue editor and Rekordbox XML import | Available |
 | Audio editor (cut/copy/paste, fades, gain, A/B, export as a new file) | Available |
+| DJ preparation in the editor (beatgrid, cues, loops, sections, notes) | Available |
+| Editor effects, pitch shift and time stretch | Planned (editor V2 lot 2) |
 | Playlists and AI set builder | Planned |
 
 ## Features
@@ -189,8 +191,33 @@ export.
   `(Edited 2)`.
 
 The browser previews the same decode the export uses (`/tracks/{id}/edit/source`),
-so what you hear is what gets exported. No EQ, effects, time-stretch, beatgrid or
-cue editing in this first version.
+so what you hear is what gets exported.
+
+#### DJ preparation (editor tabs)
+
+The editor's tabs prepare the track for a set; everything is saved right away in
+the catalogue, on the original track, and shown on the waveform (on B, wherever
+that audio is still heard):
+
+- **Beatgrid** — BPM ±0.01/0.1/1, ×2, ÷2, move the grid by 1/10 ms, “Bar 1
+  here”, tap tempo (T), and tempo changes for tracks whose tempo moves. A grid
+  edited in Cueflow survives re-analysis and replaces the grid in Rekordbox on
+  import.
+- **Cues** — hot cues A–H and memory cues at the playhead (C / M), dragged on
+  the waveform, named, coloured. Positions snap to the beat.
+- **Loops** — 1/2 to 32 beats at the playhead (L), memory or hot loops, moved
+  and resized on the waveform, played in a loop, duplicated. Exported as
+  Rekordbox loops.
+- **Sections** — the detected structure can be corrected: type (Intro, Verse,
+  Build, Drop, Break, Chorus, Bridge, Outro, Custom…), name, colour, split,
+  merge, drag the boundaries. Your sections replace the detected ones (which
+  can be restored) and drive the generated memory cues.
+- **Notes** — 📝 🔴 🗣 ⚠️ 🔥 notes on the timeline (N), kept in Cueflow.
+- **Key** — corrected from the header (Camelot and musical name).
+
+An exported edit is added to the library with its preparation carried through
+the cuts (grid, cues, loops, sections, notes), so it appears in the Rekordbox XML
+(“Edits” playlist) without a new analysis.
 
 ### Genre Review
 
@@ -362,6 +389,12 @@ The FastAPI service currently exposes:
 - `GET /tracks/{id}/cues`, `POST /tracks/{id}/cues/approve`,
   `POST /tracks/{id}/cues/regenerate` and `DELETE /tracks/{id}/cues/{cue_id}` —
   review the suggested cues;
+- `POST /tracks/{id}/cues` and `PATCH /tracks/{id}/cues/{cue_id}` — place,
+  move, rename or resize (loops) cues;
+- `PUT /tracks/{id}/beatgrid` — the DJ's beatgrid (with tempo changes);
+- `PUT/DELETE /tracks/{id}/sections` — the DJ's sections / back to the detected
+  ones;
+- `/tracks/{id}/annotations` — timeline notes;
 - `GET /export/rekordbox/preview` and `POST /export/rekordbox` — build the
   Rekordbox XML;
 - `GET/PUT/DELETE /tracks/{id}/edit`, `GET /tracks/{id}/edit/source` and
@@ -395,8 +428,8 @@ normalisation, folders, genre suggestions and cleanup safety rules.
 - Structure detection is rule-based and tuned on house arrangements; bar 1 is
   right for ~70 % of tracks from the model alone (83 % when it is confident)
   and is corrected from the drops when they agree.
-- Cues cannot be dragged on the waveform yet (remove + approve only); Rekordbox
-  XML import is not implemented.
+- Cues, loops and notes are quantized to the beat; cue points between beats are
+  not supported.
 - Ollama integration, embeddings, semantic search and AI cue suggestions are
   planned but not part of the current runtime.
 - There is no direct Rekordbox synchronisation, by design: the XML export is
