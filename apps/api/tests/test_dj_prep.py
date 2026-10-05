@@ -151,7 +151,7 @@ def test_dj_cues_and_loops(client, analysed):
     memory_loop = next(c for c in loop if c["loop_beats"] == 0.5)
     assert memory_loop["slot"] == "U01" and memory_loop["type"] == "MEMORY"
 
-    taken = next(iter(generated))
+    taken = min(generated - {"D"})  # another cue's slot (not the drop moved below)
     assert client.post(url, json={"type": "HOT", "bar": 1, "slot": taken}).status_code == 409
 
     # Moving a generated cue makes it the DJ's: re-analysis does not bring it back.
