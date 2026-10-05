@@ -307,3 +307,40 @@ export interface RekordboxSnapshot {
   memory_cues: number;
   imported_at: string;
 }
+
+/** A slice of the original (frames at the edit's sample rate) and its fade ramps ([gain at start, gain at end]). */
+export interface EditSegment {
+  start: number;
+  end: number;
+  ramps: [number, number][];
+}
+
+/** A working edit: the original file is never rewritten, only this list over it. */
+export interface EditList {
+  sample_rate: number;
+  gain_db: number;
+  segments: EditSegment[];
+}
+
+export interface TrackEdit {
+  track_id: string;
+  /** The rate the original is decoded at; segment frames count at this rate. */
+  sample_rate: number;
+  edit: EditList | null;
+  updated_at: string | null;
+}
+
+export type EditExportFormat = "wav" | "mp3";
+
+export interface EditExportRequest {
+  edit: EditList;
+  format: EditExportFormat;
+  /** WAV: bit depth (16 | 24). MP3: kbps (192 | 256 | 320). */
+  quality: 16 | 24 | 192 | 256 | 320;
+}
+
+export interface EditExportResult {
+  path: string;
+  filename: string;
+  duration_ms: number;
+}

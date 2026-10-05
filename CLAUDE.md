@@ -67,6 +67,9 @@ The current runtime implements the library-management MVP plus genre review and 
 * Rekordbox collection XML import (read-only): ratings (Rekordbox > file tag, never > USER), missing BPM/key/genre,
   snapshot of its beatgrid and cues; exported XML keeps the DJ's Rekordbox grid and snaps cues onto it
 * User decision (2026-10-01): Cueflow cues replace the hot cues already in Rekordbox on import
+* Audio editor V1 (`/tracks/{id}/edit`): cut/copy/paste/duplicate/delete/trim/split, fades, gain, normalize,
+  undo/redo, A/B, saved working edit (edit list in `track_edits`), export as a new file in `EDITS_DIR` —
+  the original is only read, an existing file is never overwritten
 * Duplicate detection
 * Probable duplicate detection
 * Short-track cleanup
@@ -474,6 +477,12 @@ GET    /export/rekordbox/preview
 POST   /export/rekordbox
 GET    /export/rekordbox/live
 POST   /export/rekordbox/live
+
+GET    /tracks/{id}/edit
+PUT    /tracks/{id}/edit
+DELETE /tracks/{id}/edit
+GET    /tracks/{id}/edit/source
+POST   /tracks/{id}/edit/export
 
 POST   /library/reveal
 ```
@@ -1056,6 +1065,8 @@ Important variables:
 DATABASE_URL
 MUSIC_ROOT
 NEXT_PUBLIC_API_URL
+
+EDITS_DIR
 
 OLLAMA_URL
 OLLAMA_LLM_MODEL

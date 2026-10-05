@@ -20,6 +20,7 @@ export function PlayerBar() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (isTyping(event.target) || event.metaKey || event.ctrlKey) return;
+      if (window.location.pathname.endsWith("/edit")) return; // the editor has its own transport
       if (event.code === "Space") {
         event.preventDefault();
         usePlayer.getState().toggle();

@@ -2,6 +2,9 @@ import type {
   AnalysisStatus,
   Cue,
   DuplicateKind,
+  EditExportRequest,
+  EditExportResult,
+  EditList,
   DuplicatePage,
   ExportPreview,
   Facets,
@@ -20,6 +23,7 @@ import type {
   TagCount,
   Track,
   TrackAnalysis,
+  TrackEdit,
   TrackPage,
   TrackQuery,
   TrackUpdate,
@@ -59,6 +63,16 @@ export const api = {
   removeTag: (id: string, tagId: string) => request<Track>(`/tracks/${id}/tags/${tagId}`, { method: "DELETE" }),
   peaks: (id: string) => request<Peaks>(`/tracks/${id}/peaks`),
   audioUrl: (id: string) => `${API_URL}/tracks/${id}/audio`,
+
+  trackEdit: (id: string) => request<TrackEdit>(`/tracks/${id}/edit`),
+  saveEdit: (id: string, edit: EditList) =>
+    request<TrackEdit>(`/tracks/${id}/edit`, { method: "PUT", body: JSON.stringify(edit) }),
+  resetEdit: (id: string) => request<TrackEdit>(`/tracks/${id}/edit`, { method: "DELETE" }),
+  /** The decoded original the editor works on (same decoder as the export). */
+  editSourceUrl: (id: string) => `${API_URL}/tracks/${id}/edit/source`,
+  exportEdit: (id: string, body: EditExportRequest) =>
+    request<EditExportResult>(`/tracks/${id}/edit/export`, { method: "POST", body: JSON.stringify(body) }),
+
   tags: () => request<TagCount[]>("/tags"),
   facets: (minDurationMs?: number) => request<Facets>(`/library/facets?${toSearchParams({ min_duration_ms: minDurationMs })}`),
   startScan: (path?: string) =>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Pause, Play } from "lucide-react";
+import { ArrowLeft, AudioWaveform, Pause, Play } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use } from "react";
@@ -76,6 +76,9 @@ export default function TrackPage({ params }: PageProps<"/tracks/[id]">) {
           </div>
           <div className="flex flex-col items-end gap-2">
             <Rating value={track.rating} size="md" onChange={(rating) => update.mutate({ rating })} />
+            <Button variant="outline" size="sm" nativeButton={false} render={<Link href={`/tracks/${track.id}/edit`} />}>
+              <AudioWaveform /> Open in Editor
+            </Button>
             <Badge variant="outline" className="font-mono text-[10px]">
               {track.status.replace("_", " ")}
             </Badge>

@@ -33,6 +33,7 @@ review and cleanup tools:
 | Ollama classification, embeddings and cue suggestions | Planned for MVP 0.3 |
 | Hot/memory cue suggestions and Rekordbox XML export | Available |
 | Cue editor and Rekordbox XML import | Planned for MVP 0.4 |
+| Audio editor (cut/copy/paste, fades, gain, A/B, export as a new file) | Available |
 | Playlists and AI set builder | Planned |
 
 ## Features
@@ -165,6 +166,31 @@ BPM and key are only written to the catalogue when the file tags have none; a
 differing tag is shown on the track page and replaced only on request.
 Analysis takes about 7-12 s per track (`ANALYSIS_WORKERS` processes in
 parallel).
+
+### Audio editor
+
+“Open in Editor” on a track page opens a minimal audio editor. The original file
+is only ever read: an edit is a list of slices of the original (plus fades and a
+gain) kept in the catalogue (`track_edits`), and audio is rendered only on
+export.
+
+- waveform with time ruler, zoom (`+`/`-`, ⌘/Ctrl + wheel), overview strip,
+  click to place the playhead, drag to select, drag a selection edge to move it,
+  double-click to select a segment;
+- Cut, Copy, Paste (at the playhead), Duplicate, Delete, Trim, Split, Fade in/out
+  over the selection, global gain (±12 dB) and Normalize (peak to −1 dBFS);
+- undo/redo for every edit (⌘Z / ⌘⇧Z), Save edit (⌘S), Reset to original
+  (confirmed);
+- play/pause, stop, play the selection, loop it, A/B between the original and
+  the edit at the same musical moment;
+- Export writes `<file> (Edited).wav|mp3` (WAV 16/24-bit, MP3 192–320 kbps, tags
+  copied from the original) in `EDITS_DIR` (default `data/edits/`, outside the
+  library). An existing file is never overwritten: the next one is
+  `(Edited 2)`.
+
+The browser previews the same decode the export uses (`/tracks/{id}/edit/source`),
+so what you hear is what gets exported. No EQ, effects, time-stretch, beatgrid or
+cue editing in this first version.
 
 ### Genre Review
 
@@ -303,6 +329,7 @@ and adjust:
 | `OLLAMA_LLM_MODEL` | Future local LLM | `gemma4:12b-it-qat` |
 | `OLLAMA_EMBED_MODEL` | Future embedding model | `embeddinggemma` |
 | `EMBEDDING_DIM` | Future vector dimension | `768` |
+| `EDITS_DIR` | Where the audio editor exports edited files | `data/edits/` |
 
 ## Commands
 
@@ -337,6 +364,9 @@ The FastAPI service currently exposes:
   review the suggested cues;
 - `GET /export/rekordbox/preview` and `POST /export/rekordbox` — build the
   Rekordbox XML;
+- `GET/PUT/DELETE /tracks/{id}/edit`, `GET /tracks/{id}/edit/source` and
+  `POST /tracks/{id}/edit/export` — audio editor: saved working edit, decoded
+  original, export as a new file;
 - `POST/GET /library/scan` — start a scan and read its status;
 - `GET /library/folders` and `GET /library/facets` — folder tree and filter
   facets;
